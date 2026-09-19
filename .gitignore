@@ -8,6 +8,8 @@
 *.pem
 *.key
 .clasp.json
+config.local.js
+!config.local.example.js
 
 # 系統與日誌
 node_modules/

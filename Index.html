@@ -13,6 +13,8 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- PapaParse for CSV parsing -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- 本地端私有配置（已列入 .gitignore，若存在則自動載入，絕不上傳 Git） -->
+  <script src="config.local.js"></script>
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
@@ -1237,7 +1239,22 @@
     };
 
     window.closeDrawer = function() { document.getElementById("tenant-modal").classList.add("hidden"); };
-    window.openSettingsModal = function() { document.getElementById("settings-modal").classList.remove("hidden"); };
+    window.openSettingsModal = function() {
+      const localCfg = (typeof window.__LOCAL_CONFIG__ !== 'undefined' && window.__LOCAL_CONFIG__) ? window.__LOCAL_CONFIG__ : {};
+      const currentId = localStorage.getItem("g_sheet_id") || localCfg.SPREADSHEET_ID || "";
+      const currentMaster = localStorage.getItem("g_sheet_master_tab") || localCfg.MASTER_TAB || "Store_Contract_Master";
+      const currentRaw = localStorage.getItem("g_sheet_raw_tab") || localCfg.RAW_TAB || "Monthly_Settlement_Raw";
+
+      const idInput = document.getElementById("setting-sheet-id");
+      const masterInput = document.getElementById("setting-tab-master");
+      const rawInput = document.getElementById("setting-tab-raw");
+
+      if (idInput) idInput.value = currentId;
+      if (masterInput) masterInput.value = currentMaster;
+      if (rawInput) rawInput.value = currentRaw;
+
+      document.getElementById("settings-modal").classList.remove("hidden");
+    };
     window.closeSettingsModal = function() { document.getElementById("settings-modal").classList.add("hidden"); };
 
     window.handleSecretUnlock = function() {
@@ -1325,21 +1342,25 @@
         return;
       }
 
-      // 2. 若為本機開發且手動輸入了試算表 ID
-      const customSheetId = localStorage.getItem("g_sheet_id");
-      const masterTab = localStorage.getItem("g_sheet_master_tab") || "Store_Contract_Master";
-      const rawTab = localStorage.getItem("g_sheet_raw_tab") || "Monthly_Settlement_Raw";
+      // 2. 若為本機開發環境：讀取本機私有設定 config.local.js 或 localStorage
+      const localCfg = (typeof window.__LOCAL_CONFIG__ !== 'undefined' && window.__LOCAL_CONFIG__) ? window.__LOCAL_CONFIG__ : {};
+      const customSheetId = localStorage.getItem("g_sheet_id") || localCfg.SPREADSHEET_ID;
+      const masterTab = localStorage.getItem("g_sheet_master_tab") || localCfg.MASTER_TAB || "Store_Contract_Master";
+      const rawTab = localStorage.getItem("g_sheet_raw_tab") || localCfg.RAW_TAB || "Monthly_Settlement_Raw";
 
       if (!customSheetId) {
-        showToast("提示：目前未指定自訂試算表 ID，請於設定視窗中輸入或部署至 GAS", "alert");
+        showToast("提示：目前未指定試算表 ID，請於設定視窗中輸入或配置 config.local.js", "alert");
         return;
       }
 
+      showToast("正在從 Google 試算表同步真實資料...", "info");
       try {
         const [mRows, rRows] = await Promise.all([fetchSheetTabAsCSV(customSheetId, masterTab), fetchSheetTabAsCSV(customSheetId, rawTab)]);
         if (mRows.length > 0 && rRows.length > 0) {
           populateDataFromRows(mRows, rRows);
-          showToast("自訂試算表同步完成！");
+          showToast(`試算表同步成功！已載入 ${mRows.length} 個專櫃、${rRows.length} 筆月結紀錄`);
+        } else {
+          showToast("同步完成但無專櫃資料，請確認分頁名稱", "alert");
         }
       } catch (err) {
         showToast("同步失敗: " + err.message, "alert");
