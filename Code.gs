@@ -171,19 +171,18 @@ function getAppProperty(key) {
  * 執行後機密資訊將永久保存在 Google 雲端屬性中，代碼推送到 Git 也不會外洩！
  */
 function setupInitialProperties(customSheetId, customSecret) {
-  if (!customSheetId) {
-    throw new Error('請提供 customSheetId 參數，例如: setupInitialProperties("您的試算表ID")');
+  if (!customSheetId || !customSecret) {
+    throw new Error('請提供完整參數，例如: setupInitialProperties("試算表ID", "API授權金鑰")');
   }
-  var secret = customSecret || 'leasing_hub_secret_key_2026';
 
   PropertiesService.getScriptProperties().setProperties({
     'SPREADSHEET_ID': customSheetId.trim(),
-    'APP_SHARED_SECRET': secret.trim(),
+    'APP_SHARED_SECRET': customSecret.trim(),
     'MASTER_TAB': 'Store_Contract_Master',
     'RAW_TAB': 'Monthly_Settlement_Raw'
   });
 
-  Logger.log('✅ 腳本屬性初始化完成！SPREADSHEET_ID 已成功綁定於雲端屬性。');
+  Logger.log('✅ 腳本屬性初始化完成！SPREADSHEET_ID 與 APP_SHARED_SECRET 已安全綁定於雲端屬性。');
 }
 
 /**
