@@ -827,18 +827,37 @@
 
         let tag = { text: "穩定觀察", color: "bg-slate-500/20 text-slate-300 border-slate-500/30" };
         let strategy = "營運平穩，正常履約中。";
-        if (salesNet <= 0) {
-          tag = { text: "新進駐/籌備中", color: "bg-blue-500/20 text-blue-300 border-blue-400/30" };
-          strategy = salesNet < 0 ? "本期累計淨額為負（退貨大於銷貨），請查對退換貨明細及退抽手續。" : "尚無銷貨記錄（籌備或未出表），追蹤進場與開業進度。";
-        } else if (shortageCount >= 2 || (hasPriorData && yoy !== null && yoy <= -0.10)) {
-          tag = { text: "建議汰換/調降保底", color: "bg-rose-500/20 text-rose-300 border-rose-500/30" };
-          strategy = "多次保底不足或營收衰退，建議期滿評估調降保底或更換新品牌。";
-        } else if (isNewStore) {
-          tag = { text: "新進駐/首期追蹤", color: "bg-cyan-500/20 text-cyan-300 border-cyan-400/30" };
-          strategy = "新櫃進駐首期營運，尚無去年同期數據，重點追蹤集客力與坪效表現。";
-        } else if (yoy !== null && yoy >= 0.08 && ocr >= 0.08) {
-          tag = { text: "核心續約/評估提抽", color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" };
-          strategy = "成長強勁且集客力高，建議提前洽談長約並評估適度調升抽成率。";
+
+        if (daysToExpiry < 0) {
+          // ==================== 已撤櫃專櫃回溯診斷引擎 ====================
+          if (salesNet <= 0) {
+            tag = { text: "已撤/合約結案", color: "bg-indigo-950/70 text-indigo-300 border-indigo-500/50" };
+            strategy = "納管期間無出表銷貨數據，已屆期退場。請查對財務手續、設備點交與保證金返還流程，確認無未結清款項。";
+          } else if (shortageCount >= 2 || (hasPriorData && yoy !== null && yoy <= -0.15) || (hasValidSales && ocr > 0.22)) {
+            tag = { text: "已撤/建議淘汰", color: "bg-rose-950/70 text-rose-300 border-rose-500/50" };
+            strategy = "歷史銷貨動能低迷且多次觸發保底不足，品牌承租與集客效益不佳。建議封存品牌檔案，原則上不再主動回簽或續約引進，釋出坪數保留予新業種品牌。";
+          } else if (shortageCount < 2 && ((hasPriorData && yoy !== null && yoy >= 0.05) || (hasValidSales && ocr >= 0.08 && pingSales > 0))) {
+            tag = { text: "已撤/建議重招", color: "bg-emerald-950/70 text-emerald-300 border-emerald-500/50" };
+            strategy = "曾為高集客或營收正成長之績優專櫃，可能因租期屆滿或品牌展店策略退場。建議招商團隊列為重點回訪名冊，評估提供優勢櫃位或新企劃條件，洽談回駐重招。";
+          } else {
+            tag = { text: "已撤/轉備選庫", color: "bg-slate-800/70 text-slate-300 border-slate-600/50" };
+            strategy = "履約正常且營收平穩，合約期滿退場。建議轉入商場儲備品牌庫存，若日後有同品類改裝期、臨時快閃檔期或空櫃過渡，可列為備選洽商合作對象。";
+          }
+        } else {
+          // ==================== 在櫃專櫃常態營運診斷 ====================
+          if (salesNet <= 0) {
+            tag = { text: "新進駐/籌備中", color: "bg-blue-500/20 text-blue-300 border-blue-400/30" };
+            strategy = salesNet < 0 ? "本期累計淨額為負（退貨大於銷貨），請查對退換貨明細及退抽手續。" : "尚無銷貨記錄（籌備或未出表），追蹤進場與開業進度。";
+          } else if (shortageCount >= 2 || (hasPriorData && yoy !== null && yoy <= -0.10)) {
+            tag = { text: "建議汰換/調降保底", color: "bg-rose-500/20 text-rose-300 border-rose-500/30" };
+            strategy = "多次保底不足或營收衰退，建議期滿評估調降保底或更換新品牌。";
+          } else if (isNewStore) {
+            tag = { text: "新進駐/首期追蹤", color: "bg-cyan-500/20 text-cyan-300 border-cyan-400/30" };
+            strategy = "新櫃進駐首期營運，尚無去年同期數據，重點追蹤集客力與坪效表現。";
+          } else if (yoy !== null && yoy >= 0.08 && ocr >= 0.08) {
+            tag = { text: "核心續約/評估提抽", color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" };
+            strategy = "成長強勁且集客力高，建議提前洽談長約並評估適度調升抽成率。";
+          }
         }
 
         return {
@@ -881,12 +900,31 @@
 
         let tag = { text: "集團觀察", color: "bg-slate-500/20 text-slate-300 border-slate-500/30" };
         let strategy = `旗下共納管 ${items.length} 個專櫃，整體營運平穩。`;
-        if (totalSales <= 0) {
-          tag = { text: "新進駐/籌備中", color: "bg-blue-500/20 text-blue-300 border-blue-400/30" };
-        } else if (shortage >= 2) {
-          tag = { text: "集團協商/調整櫃位", color: "bg-rose-500/20 text-rose-300 border-rose-500/30" };
-        } else if (yoy !== null && yoy >= 0.08) {
-          tag = { text: "戰略夥伴/深化合作", color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" };
+
+        if (minDays < 0) {
+          // 旗下專櫃皆已到期退場
+          if (totalSales <= 0) {
+            tag = { text: "已撤/集團結案", color: "bg-indigo-950/70 text-indigo-300 border-indigo-500/50" };
+            strategy = `旗下 ${items.length} 個專櫃均已到期退場，且無實質出表銷貨，辦理結案手續。`;
+          } else if (shortage >= 2 || (hasPrior && yoy !== null && yoy <= -0.15)) {
+            tag = { text: "已撤/集團淘汰", color: "bg-rose-950/70 text-rose-300 border-rose-500/50" };
+            strategy = `旗下專櫃退場前多次觸發保底不足或大幅衰退，建議終止引進該集團旗下品牌。`;
+          } else if (shortage < 2 && ((hasPrior && yoy !== null && yoy >= 0.05) || ocr >= 0.08)) {
+            tag = { text: "已撤/集團重招", color: "bg-emerald-950/70 text-emerald-300 border-emerald-500/50" };
+            strategy = `旗下專櫃退場前營收貢獻良好，建議招商團隊評估洽談新合約或引進該集團其他優質新品牌。`;
+          } else {
+            tag = { text: "已撤/轉備選庫", color: "bg-slate-800/70 text-slate-300 border-slate-600/50" };
+            strategy = `旗下專櫃正常期滿退場，轉入儲備廠商庫存，列為改裝與檔期備選名冊。`;
+          }
+        } else {
+          // 仍有在櫃專櫃
+          if (totalSales <= 0) {
+            tag = { text: "新進駐/籌備中", color: "bg-blue-500/20 text-blue-300 border-blue-400/30" };
+          } else if (shortage >= 2) {
+            tag = { text: "集團協商/調整櫃位", color: "bg-rose-500/20 text-rose-300 border-rose-500/30" };
+          } else if (yoy !== null && yoy >= 0.08) {
+            tag = { text: "戰略夥伴/深化合作", color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" };
+          }
         }
 
         return {
@@ -1224,7 +1262,16 @@
       const { isVendorGroup, displayName, companyName, store, currentRecord, realMallRevenue, decisionTag, strategy, underlyingStores, shortageCount } = row;
       const modal = document.getElementById("tenant-modal");
       document.getElementById("drawer-title").innerText = displayName;
-      document.getElementById("drawer-subtitle").innerText = isVendorGroup ? `集團納管 ${underlyingStores.length} 櫃` : `編號: ${store.id} ｜ 廠商: ${companyName} ｜ ${store.floor} ${store.category}`;
+      const isExpired = row.daysToExpiry < 0;
+      let subtitleText = '';
+      if (isVendorGroup) {
+        subtitleText = isExpired ? `【已撤櫃集團】旗下 ${underlyingStores.length} 櫃（均已到期退場）` : `集團納管 ${underlyingStores.length} 櫃`;
+      } else {
+        subtitleText = isExpired 
+          ? `【已撤櫃專櫃】編號: ${store.id} ｜ 廠商: ${companyName} ｜ 於 ${store.end} 屆滿退場 (已撤 ${Math.abs(row.daysToExpiry)} 天)` 
+          : `編號: ${store.id} ｜ 廠商: ${companyName} ｜ ${store.floor} ${store.category}`;
+      }
+      document.getElementById("drawer-subtitle").innerText = subtitleText;
       document.getElementById("drawer-dates-label").innerText = isVendorGroup ? "合約數量" : "合約起訖期間";
       document.getElementById("drawer-contract-dates").innerText = isVendorGroup ? `${underlyingStores.length} 份合約` : `${store.start} ~ ${store.end}`;
       document.getElementById("drawer-rate-info").innerText = store.type;
