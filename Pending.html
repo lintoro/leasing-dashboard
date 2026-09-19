@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>審核中 | 專櫃營運與招商戰情室</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+    
+    :root {
+      --primary-navy: #1E2761;
+      --secondary-blue: #CADCFC;
+      --bg-dark: #1a224a;
+      --card-bg: #212c60;
+      --card-border: #36458d;
+      --accent-highlight: #4d7cfe;
+    }
+
+    body {
+      font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-dark);
+      color: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .status-card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      box-shadow: 0 10px 30px rgba(12, 17, 48, 0.5);
+    }
+  </style>
+</head>
+<body class="p-4 selection:bg-blue-500 selection:text-white">
+
+  <div class="w-full max-w-md status-card rounded-2xl p-6 sm:p-8 space-y-6 text-center relative overflow-hidden">
+    <!-- 審核中動態圖示 -->
+    <div class="mx-auto w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/10">
+      <i data-lucide="clock" class="w-8 h-8 animate-pulse"></i>
+    </div>
+
+    <!-- 標題與說明 -->
+    <div class="space-y-2">
+      <h1 class="text-xl font-bold text-white tracking-tight">帳號存取審核中</h1>
+      <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+        您的存取申請已成功送出並進入管理員審核隊列。請靜候主管或系統管理員完成權限核可。
+      </p>
+    </div>
+
+    <!-- 審核後登入提示卡 -->
+    <div class="bg-[#161e46] p-4 rounded-xl border border-[#36458d] text-left text-xs space-y-2.5">
+      <div class="flex items-center gap-2 text-[#CADCFC] font-bold">
+        <i data-lucide="key" class="w-4 h-4 text-cyan-300"></i>
+        <span>開通登入指引</span>
+      </div>
+      <ul class="space-y-1.5 text-slate-300 text-[11px] leading-normal list-disc list-inside">
+        <li>管理員核可後，系統預設密碼為 <code class="bg-[#1E2761] px-1.5 py-0.5 rounded text-amber-300 font-mono font-bold">000000</code>。</li>
+        <li>以您的工號與預設密碼首次登入後，系統將強制要求修改密碼。</li>
+        <li>若有急迫業務決策需求，請直接口頭聯繫招商處系統管理人員。</li>
+      </ul>
+    </div>
+
+    <!-- 操作按鈕 -->
+    <div class="pt-2 flex flex-col sm:flex-row gap-2.5">
+      <button type="button" onclick="navigateTo('login')"
+              class="w-full h-[42px] bg-[#4d7cfe] hover:bg-blue-600 active:scale-[0.98] text-white font-bold rounded-xl transition flex items-center justify-center gap-2 shadow text-xs">
+        <i data-lucide="log-in" class="w-4 h-4"></i>
+        <span>前往登入試試</span>
+      </button>
+      <button type="button" onclick="window.location.reload()"
+              class="w-full h-[42px] bg-[#161e46] hover:bg-[#36458d] active:scale-[0.98] text-[#CADCFC] hover:text-white font-bold rounded-xl transition border border-[#36458d] flex items-center justify-center gap-2 text-xs">
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+        <span>重新整理狀態</span>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    function navigateTo(page) {
+      if (window.google && google.script && google.script.run) {
+        google.script.run.withSuccessHandler(function(url) {
+          window.location.href = url + '?page=' + page;
+        }).getScriptUrl();
+      } else {
+        const urlParams = new URLSearchParams(window.location.search);
+        urlParams.set('page', page);
+        window.location.search = urlParams.toString();
+      }
+    }
+  </script>
+</body>
+</html>

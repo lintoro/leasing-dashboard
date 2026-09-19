@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>系統管理後台 | 專櫃營運與招商戰情室</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- SheetJS (xlsx) for Excel parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+    
+    :root {
+      --primary-navy: #1E2761;
+      --secondary-blue: #CADCFC;
+      --bg-dark: #1a224a;
+      --card-bg: #212c60;
+      --card-border: #36458d;
+      --accent-highlight: #4d7cfe;
+    }
+
+    body {
+      font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-dark);
+      color: #ffffff;
+      min-height: 100vh;
+    }
+
+    .admin-card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      box-shadow: 0 4px 18px rgba(12, 17, 48, 0.35);
+    }
+
+    .tab-btn {
+      padding: 8px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      transition: all 0.2s;
+      color: #CADCFC;
+      border: 1px solid transparent;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tab-btn.active {
+      background-color: #4d7cfe;
+      color: #ffffff;
+      border-color: #CADCFC;
+      box-shadow: 0 2px 8px rgba(77, 124, 254, 0.4);
+    }
+
+    .drawer-panel {
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .drawer-panel.hidden-drawer {
+      transform: translateX(100%);
+    }
+
+    /* 滾動條 */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1a224a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #36458d;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="selection:bg-blue-500 selection:text-white flex flex-col min-h-screen">
+
+  <!-- 頂部 Header -->
+  <header class="bg-[#1E2761] border-b border-[#36458d] px-4 py-3 sticky top-0 z-40 shadow-xl">
+    <div class="max-w-7xl mx-auto flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow font-bold shrink-0">
+          <i data-lucide="shield-check" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="text-base font-bold text-white tracking-tight flex items-center gap-2">
+            戰情室系統管理後台
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-purple-900/60 text-purple-300 border border-purple-400/40 font-semibold">ADMIN</span>
+          </h1>
+          <p class="text-xs text-[#CADCFC]/80">使用者審核 • 月結 Excel 增量更新 • 專櫃主檔 CRUD</p>
+        </div>
+      </div>
+
+      <!-- 右側資訊與按鈕 -->
+      <div class="flex items-center gap-2 sm:gap-3">
+        <div class="hidden md:flex items-center gap-1.5 bg-[#161e46] px-3 py-1.5 rounded-xl border border-[#36458d] text-xs">
+          <i data-lucide="user-check" class="w-4 h-4 text-emerald-400"></i>
+          <span class="text-slate-400">管理員：</span>
+          <span id="current-admin-name" class="font-bold text-white">驗證中...</span>
+        </div>
+
+        <button onclick="navigateTo('dashboard')" class="h-9 px-3 bg-[#4d7cfe] hover:bg-blue-600 active:scale-95 text-white font-bold rounded-xl transition flex items-center gap-1.5 text-xs shadow">
+          <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+          <span class="hidden sm:inline">前往戰情室</span>
+        </button>
+
+        <button onclick="handleLogout()" class="h-9 px-3 bg-[#161e46] hover:bg-rose-900/40 hover:border-rose-500/50 text-[#CADCFC] hover:text-rose-200 font-bold rounded-xl transition border border-[#36458d] flex items-center gap-1.5 text-xs">
+          <i data-lucide="log-out" class="w-4 h-4"></i>
+          <span class="hidden sm:inline">登出</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主內容區 -->
+  <main class="max-w-7xl mx-auto w-full p-3 sm:p-6 flex-1 space-y-5">
+    
+    <!-- Tab 切換列 -->
+    <div class="flex items-center gap-2 overflow-x-auto pb-1 border-b border-[#36458d]">
+      <button onclick="switchTab('users')" id="tab-btn-users" class="tab-btn active">
+        <i data-lucide="users" class="w-4 h-4"></i>
+        <span>使用者審核與帳號管理</span>
+        <span id="pending-badge" class="hidden ml-1 px-1.5 py-0.2 bg-amber-500 text-slate-900 font-extrabold rounded-full text-[10px]">0</span>
+      </button>
+
+      <button onclick="switchTab('upload')" id="tab-btn-upload" class="tab-btn">
+        <i data-lucide="file-up" class="w-4 h-4"></i>
+        <span>月結資料 Excel 增量更新</span>
+      </button>
+
+      <button onclick="switchTab('master')" id="tab-btn-master" class="tab-btn">
+        <i data-lucide="store" class="w-4 h-4"></i>
+        <span>專櫃合約主檔維護 (CRUD)</span>
+      </button>
+    </div>
+
+    <!-- 訊息提示條 -->
+    <div id="global-alert" class="hidden rounded-xl p-3.5 text-xs font-semibold flex items-start justify-between gap-2 shadow transition-all">
+      <div class="flex items-center gap-2">
+        <i id="global-alert-icon" data-lucide="info" class="w-4 h-4 shrink-0"></i>
+        <span id="global-alert-msg"></span>
+      </div>
+      <button onclick="hideGlobalAlert()" class="text-current opacity-70 hover:opacity-100">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 1: 使用者審核與管理 -->
+    <!-- ========================================================================= -->
+    <section id="tab-content-users" class="space-y-6">
+      
+      <!-- 區塊 A: 待審核申請 -->
+      <div class="admin-card rounded-2xl p-4 sm:p-5 space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/40">
+              <i data-lucide="user-plus" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-sm sm:text-base font-bold text-white">待審核開通申請清單</h2>
+              <p class="text-[11px] text-slate-300">核可後系統自動指派預設密碼 000000，同仁首次登入後將強制修改密碼</p>
+            </div>
+          </div>
+          <button onclick="loadPendingUsers()" class="px-2.5 py-1 bg-[#161e46] hover:bg-[#36458d] text-xs font-bold rounded-lg border border-[#36458d] text-[#CADCFC] flex items-center gap-1">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> 重新整理
+          </button>
+        </div>
+
+        <div class="overflow-x-auto rounded-xl border border-[#36458d]">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead class="bg-[#161e46] text-[#CADCFC] uppercase font-bold border-b border-[#36458d]">
+              <tr>
+                <th class="p-3">工號</th>
+                <th class="p-3">姓名</th>
+                <th class="p-3">部門</th>
+                <th class="p-3">電子信箱</th>
+                <th class="p-3">申請原因 / 備註</th>
+                <th class="p-3">申請時間</th>
+                <th class="p-3 text-right">審核操作</th>
+              </tr>
+            </thead>
+            <tbody id="pending-users-tbody" class="divide-y divide-[#36458d]/50 text-slate-200">
+              <tr>
+                <td colspan="7" class="p-6 text-center text-slate-400">載入待審核資料中...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 區塊 B: 現有帳號清單與維護 -->
+      <div class="admin-card rounded-2xl p-4 sm:p-5 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-300 flex items-center justify-center border border-blue-500/40">
+              <i data-lucide="shield" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h2 class="text-sm sm:text-base font-bold text-white">全體使用者帳號名冊</h2>
+              <p class="text-[11px] text-slate-300">支援帳號解鎖重置 (重設為 000000) 及停用離職人員權限</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <input type="text" id="user-search-input" oninput="filterUsersTable()" placeholder="搜尋工號或姓名..." 
+                   class="bg-[#161e46] text-white placeholder-slate-400 text-xs rounded-xl px-3 py-1.5 border border-[#36458d] focus:border-[#4d7cfe] focus:outline-none">
+            <button onclick="loadAllUsers()" class="px-2.5 py-1.5 bg-[#161e46] hover:bg-[#36458d] text-xs font-bold rounded-lg border border-[#36458d] text-[#CADCFC] flex items-center gap-1">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto rounded-xl border border-[#36458d]">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead class="bg-[#161e46] text-[#CADCFC] uppercase font-bold border-b border-[#36458d]">
+              <tr>
+                <th class="p-3">工號</th>
+                <th class="p-3">姓名</th>
+                <th class="p-3">部門</th>
+                <th class="p-3">身分</th>
+                <th class="p-3">帳號狀態</th>
+                <th class="p-3">安全鎖定</th>
+                <th class="p-3">最後登入時間</th>
+                <th class="p-3 text-right">管理操作</th>
+              </tr>
+            </thead>
+            <tbody id="all-users-tbody" class="divide-y divide-[#36458d]/50 text-slate-200">
+              <tr>
+                <td colspan="8" class="p-6 text-center text-slate-400">載入帳號名冊中...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 2: 月結資料 Excel 增量更新 -->
+    <!-- ========================================================================= -->
+    <section id="tab-content-upload" class="hidden space-y-6">
+      <div class="admin-card rounded-2xl p-5 sm:p-6 space-y-5">
+        <div class="flex items-center gap-3 border-b border-[#36458d] pb-4">
+          <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/40 shrink-0">
+            <i data-lucide="file-spreadsheet" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h2 class="text-base font-bold text-white">月結流水帳資料上傳更新 (Monthly_Settlement_Raw)</h2>
+            <p class="text-xs text-[#CADCFC]/80">以「專櫃編號 + 銷售年月」為唯一複合鍵進行增量 Upsert，已存在之資料自動覆蓋更新，新紀錄直接加入末尾。</p>
+          </div>
+        </div>
+
+        <!-- 檔案拖曳上傳區 -->
+        <div id="drop-zone" onclick="document.getElementById('excel-file-input').click()"
+             class="border-2 border-dashed border-[#36458d] hover:border-[#4d7cfe] bg-[#161e46]/60 hover:bg-[#161e46] rounded-2xl p-8 text-center cursor-pointer transition flex flex-col items-center justify-center gap-3">
+          <div class="w-14 h-14 rounded-2xl bg-[#1E2761] border border-[#36458d] flex items-center justify-center text-[#CADCFC]">
+            <i data-lucide="upload-cloud" class="w-7 h-7 text-[#4d7cfe]"></i>
+          </div>
+          <div>
+            <p class="text-sm font-bold text-white">點擊選取或拖曳 Excel 檔案至此</p>
+            <p class="text-xs text-slate-400 mt-1">支援 .xlsx, .xls 試算表格式</p>
+          </div>
+          <input type="file" id="excel-file-input" accept=".xlsx, .xls" class="hidden" onchange="handleExcelSelect(event)">
+        </div>
+
+        <!-- 預覽與確認區 (初始隱藏) -->
+        <div id="excel-preview-section" class="hidden space-y-4 pt-2">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-[#161e46] p-4 rounded-xl border border-[#36458d]">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-white" id="preview-file-name">檔案名稱.xlsx</span>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold" id="preview-row-count">共 0 筆</span>
+              </div>
+              <p class="text-[11px] text-slate-300 mt-0.5" id="preview-summary">請確認欄位對齊無誤後，點擊右方按鈕提交寫入雲端試算表。</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="clearExcelUpload()" class="px-3 py-2 bg-transparent hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition border border-[#36458d]">
+                取消重選
+              </button>
+              <button onclick="submitExcelUpsert()" id="submit-excel-btn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-lg shadow-emerald-600/30">
+                <i data-lucide="database" class="w-4 h-4"></i>
+                <span>確認增量 Upsert 更新</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto rounded-xl border border-[#36458d] max-h-[380px]">
+            <table class="w-full text-left text-[11px] border-collapse" id="preview-table">
+              <thead class="bg-[#161e46] text-[#CADCFC] uppercase font-bold sticky top-0 border-b border-[#36458d]" id="preview-thead"></thead>
+              <tbody class="divide-y divide-[#36458d]/50 text-slate-200" id="preview-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 3: 專櫃合約主檔維護 (Store_Contract_Master) -->
+    <!-- ========================================================================= -->
+    <section id="tab-content-master" class="hidden space-y-6">
+      <div class="admin-card rounded-2xl p-5 sm:p-6 space-y-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#36458d] pb-4">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-500/40 shrink-0">
+              <i data-lucide="store" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h2 class="text-base font-bold text-white">專櫃合約主檔維護 (Store_Contract_Master)</h2>
+              <p class="text-xs text-[#CADCFC]/80">點擊任一專櫃即可展開右側抽屜進行合約條件編輯，或點擊右上方新增專櫃。</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <div class="relative">
+              <input type="text" id="master-search-input" oninput="filterMasterTable()" placeholder="搜尋編號、專櫃、廠商..."
+                     class="bg-[#161e46] text-white placeholder-slate-400 text-xs rounded-xl pl-8 pr-3 py-2 border border-[#36458d] focus:border-[#4d7cfe] focus:outline-none w-48 sm:w-64">
+              <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5"></i>
+            </div>
+
+            <button onclick="openCreateMasterDrawer()" class="h-9 px-3 bg-[#4d7cfe] hover:bg-blue-600 text-white font-bold rounded-xl transition flex items-center gap-1.5 text-xs shadow">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+              <span>新增專櫃</span>
+            </button>
+            <button onclick="loadMasterData()" class="h-9 px-2.5 bg-[#161e46] hover:bg-[#36458d] text-[#CADCFC] rounded-xl border border-[#36458d]">
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- 主檔表格 -->
+        <div class="overflow-x-auto rounded-xl border border-[#36458d] max-h-[600px]">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead class="bg-[#161e46] text-[#CADCFC] uppercase font-bold sticky top-0 border-b border-[#36458d]">
+              <tr>
+                <th class="p-3">專櫃編號</th>
+                <th class="p-3">專櫃名稱</th>
+                <th class="p-3">廠商名稱</th>
+                <th class="p-3">樓層</th>
+                <th class="p-3">品類大類</th>
+                <th class="p-3">租賃坪數</th>
+                <th class="p-3">合約起訖</th>
+                <th class="p-3">抽成別</th>
+                <th class="p-3">抽成率</th>
+                <th class="p-3">月約定保底</th>
+                <th class="p-3 text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody id="master-tbody" class="divide-y divide-[#36458d]/50 text-slate-200">
+              <tr>
+                <td colspan="11" class="p-6 text-center text-slate-400">載入專櫃主檔資料中...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- 抽屜 Panel: 專櫃主檔 編輯/新增 -->
+  <!-- ========================================================================= -->
+  <div id="master-drawer-backdrop" onclick="closeMasterDrawer()" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden transition-opacity"></div>
+  
+  <div id="master-drawer" class="fixed top-0 right-0 bottom-0 w-full max-w-lg bg-[#212c60] border-l border-[#36458d] z-50 drawer-panel hidden-drawer flex flex-col shadow-2xl">
+    <div class="p-5 border-b border-[#36458d] flex items-center justify-between bg-[#1E2761]">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-[#4d7cfe]/20 text-[#4d7cfe] flex items-center justify-center border border-[#4d7cfe]/40">
+          <i id="drawer-icon" data-lucide="edit-3" class="w-4 h-4"></i>
+        </div>
+        <h3 id="drawer-title" class="text-base font-bold text-white">編輯專櫃合約主檔</h3>
+      </div>
+      <button onclick="closeMasterDrawer()" class="text-slate-400 hover:text-white p-1 rounded-lg">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+
+    <!-- 表單內容 -->
+    <form id="master-drawer-form" onsubmit="handleMasterSubmit(event)" class="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+      <input type="hidden" id="drawer-mode" value="edit">
+
+      <div>
+        <label class="block font-bold text-[#CADCFC] mb-1">專櫃編號 (5碼格式)</label>
+        <input type="text" id="field-id" required placeholder="例：00008"
+               class="w-full bg-[#161e46] text-white text-xs font-mono font-bold rounded-xl px-3 py-2 border border-[#36458d] focus:border-[#4d7cfe] focus:outline-none">
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block font-bold text-[#CADCFC] mb-1">專櫃名稱 (品牌)</label>
+          <input type="text" id="field-name" required placeholder="專櫃品牌名稱"
+                 class="w-full bg-[#161e46] text-white text-xs rounded-xl px-3 py-2 border border-[#36458d] focus:border-[#4d7cfe] focus:outline-none">
+        </div>
+        <div>
+          <label class="block font-bold text-[#CADCFC] mb-1">廠商名稱 (公司)</label>
+          <input type="text" id="field-vendor" required placeholder="代理商/廠商總公司"
+                 class="w-full bg-[#161e46] text-white text-xs rounded-xl px-3 py-2 border border-[#36458d] focus:border-[#4d7cfe] focus:outline-none">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3">
+        <div>
+          <label class="block font-bold text-[#CADCFC] mb-1">樓層 (如 1F, B1)</label>
+          <input type="text" id="field-floor" required placeholder="1F"
+                 class="w-full bg-[#161e46] text-white text-xs rounded-xl px-3 py-2 border border-[#36458d] focus:border-[#4d7cfe] focus:outline-none">
+        </div>
+        <div>
+          <label class="block font-bold text-[#CADCFC] mb-1">品類大類</label>
+          <input type="text" id="field-category" placeholder="流行服飾/餐飲"
+                 class="w-full bg-[#161e46] text-white text-xs rounded-xl px-3 py-2 border border-[#36458d] focus:border-[#4d7cfe] focus:outline-none">
+        </div>
+        <div>
+          <label class="block font-bold text-[#CADCFC] mb-1">租賃坪數</label>
+          <input type="number" step="0.01" id="field-area" placeholder="25.5"
+                 class="w-full bg-[#161e46] text-white text-xs rounded-xl px-3 py-2 border border-[#36458d] focus:border-[#4d7cfe] focus:outline-none">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block font-bold text-[#CADCFC] mb-1">合約起始日 (YYYY-MM-DD)</label>
+          <input type="text" id="field-start" placeholder="2024-01-01"
+                 class="w-full bg-[#161e46] text-white text-xs rounded-xl px-3 py-2 border border-[#36458d] focus:border-[#4d7cfe] focus:outline-none">
+        </div>
+        <div>
+          <label class="block font-bold text-[#CADCFC] mb-1">合約到期日 (YYYY-MM-DD)</label>
+          <input type="text" id="field-end" placeholder="2025-12-31"
+                 class="w-full bg-[#161e46] text-white text-xs rounded-xl px-3 py-2 border border-[#36458d] focus:border-[#4d7cfe] focus:outline-none">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3">
+        <div>
+          <label class="block font-bold text-[#CADCFC] mb-1">約定抽成別</label>
+          <input type="text" id="field-commtype" placeholder="一般抽成/包底抽成"
+                 class="w-full bg-[#161e46] text-white text-xs rounded-xl px-3 py-2 border border-[#36458d] focus:border-[#4d7cfe] focus:outline-none">
+        </div>
+        <div>
+          <label class="block font-bold text-[#CADCFC] mb-1">約定抽成率 (如 0.15)</label>
+          <input type="number" step="0.001" id="field-commrate" placeholder="0.15"
+                 class="w-full bg-[#161e46] text-white text-xs rounded-xl px-3 py-2 border border-[#36458d] focus:border-[#4d7cfe] focus:outline-none">
+        </div>
+        <div>
+          <label class="block font-bold text-[#CADCFC] mb-1">月約定保底金額</label>
+          <input type="number" id="field-minshortage" placeholder="80000"
+                 class="w-full bg-[#161e46] text-white text-xs rounded-xl px-3 py-2 border border-[#36458d] focus:border-[#4d7cfe] focus:outline-none">
+        </div>
+      </div>
+
+      <div class="pt-4 border-t border-[#36458d] flex items-center justify-end gap-2">
+        <button type="button" onclick="closeMasterDrawer()" class="px-4 py-2 rounded-xl border border-[#36458d] text-slate-300 hover:bg-[#161e46]">
+          取消
+        </button>
+        <button type="submit" id="drawer-save-btn" class="px-5 py-2 rounded-xl bg-[#4d7cfe] hover:bg-blue-600 text-white font-bold shadow">
+          儲存專櫃資料
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- JavaScript 邏輯控制 -->
+  <script>
+    lucide.createIcons();
+
+    let allUsersCache = [];
+    let pendingUsersCache = [];
+    let masterDataCache = [];
+    let parsedExcelData = [];
+
+    // 初始化驗證
+    window.addEventListener('DOMContentLoaded', () => {
+      checkAdminAuth();
+      loadPendingUsers();
+      loadAllUsers();
+    });
+
+    function checkAdminAuth() {
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      const role = localStorage.getItem('LEASING_USER_ROLE');
+      const name = localStorage.getItem('LEASING_USER_NAME');
+      const empId = localStorage.getItem('LEASING_USER_EMPID');
+
+      if (!token || role !== 'admin') {
+        showGlobalAlert('未具備管理員權限或尚未登入，即將轉回登入頁...', 'error');
+        setTimeout(() => navigateTo('login'), 1500);
+        return;
+      }
+
+      document.getElementById('current-admin-name').innerText = (name || empId) + ' (' + empId + ')';
+    }
+
+    function navigateTo(page) {
+      if (window.google && google.script && google.script.run) {
+        google.script.run.withSuccessHandler(function(url) {
+          window.location.href = url + '?page=' + page;
+        }).getScriptUrl();
+      } else {
+        const urlParams = new URLSearchParams(window.location.search);
+        urlParams.set('page', page);
+        window.location.search = urlParams.toString();
+      }
+    }
+
+    function handleLogout() {
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      if (window.google && google.script && google.script.run && token) {
+        google.script.run.gasLogout(token);
+      }
+      localStorage.clear();
+      navigateTo('login');
+    }
+
+    function switchTab(tab) {
+      ['users', 'upload', 'master'].forEach(t => {
+        const btn = document.getElementById('tab-btn-' + t);
+        const sec = document.getElementById('tab-content-' + t);
+        if (t === tab) {
+          btn.classList.add('active');
+          sec.classList.remove('hidden');
+        } else {
+          btn.classList.remove('active');
+          sec.classList.add('hidden');
+        }
+      });
+
+      if (tab === 'master' && masterDataCache.length === 0) {
+        loadMasterData();
+      }
+    }
+
+    function showGlobalAlert(msg, type = 'info') {
+      const box = document.getElementById('global-alert');
+      const text = document.getElementById('global-alert-msg');
+      const icon = document.getElementById('global-alert-icon');
+
+      box.className = 'rounded-xl p-3.5 text-xs font-semibold flex items-start justify-between gap-2 shadow transition-all ' + 
+        (type === 'error' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' :
+         type === 'success' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
+         'bg-blue-500/20 text-blue-200 border border-blue-500/40');
+
+      icon.setAttribute('data-lucide', type === 'error' ? 'alert-circle' : type === 'success' ? 'check-circle-2' : 'info');
+      text.innerText = msg;
+      box.classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function hideGlobalAlert() {
+      document.getElementById('global-alert').classList.add('hidden');
+    }
+
+    // =========================================================================
+    // 模組 1: 使用者審核與管理
+    // =========================================================================
+
+    function loadPendingUsers() {
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      const tbody = document.getElementById('pending-users-tbody');
+      tbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-400">載入中...</td></tr>';
+
+      if (window.google && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res.success) {
+              pendingUsersCache = res.requests || [];
+              renderPendingTable(pendingUsersCache);
+            } else {
+              tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-rose-400">${res.message}</td></tr>`;
+            }
+          })
+          .gasGetPendingRequests(token);
+      } else {
+        // 地端測試模擬
+        pendingUsersCache = [
+          { emp_id: 'E0099', name: '李專案', department: '營運企劃課', email: 'lee@company.com', reason: '審閱到期專櫃數據', applied_at: '2025-01-15 10:20:00' }
+        ];
+        renderPendingTable(pendingUsersCache);
+      }
+    }
+
+    function renderPendingTable(list) {
+      const tbody = document.getElementById('pending-users-tbody');
+      const badge = document.getElementById('pending-badge');
+
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-400">目前尚無任何待審核之申請紀錄</td></tr>';
+        badge.classList.add('hidden');
+        badge.innerText = '0';
+        return;
+      }
+
+      badge.innerText = list.length;
+      badge.classList.remove('hidden');
+
+      tbody.innerHTML = list.map(item => `
+        <tr class="hover:bg-slate-700/30 transition">
+          <td class="p-3 font-mono font-bold text-white">${item.emp_id || ''}</td>
+          <td class="p-3 font-bold">${item.name || ''}</td>
+          <td class="p-3 text-slate-300">${item.department || ''}</td>
+          <td class="p-3 text-slate-400">${item.email || '<span class="text-slate-500">無</span>'}</td>
+          <td class="p-3 text-slate-300 max-w-xs truncate">${item.reason || '<span class="text-slate-500">-</span>'}</td>
+          <td class="p-3 text-[11px] text-slate-400">${item.applied_at || ''}</td>
+          <td class="p-3 text-right space-x-1.5">
+            <button onclick="approveUser('${item.emp_id}')" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition text-[11px]">
+              核可 (000000)
+            </button>
+            <button onclick="rejectUser('${item.emp_id}')" class="px-2 py-1 bg-rose-600/30 hover:bg-rose-600 text-rose-200 hover:text-white font-bold rounded-lg transition text-[11px]">
+              駁回
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function approveUser(empId) {
+      if (!confirm(`確定核可工號 [${empId}] 之存取申請？\n核可後預設密碼為 000000，首次登入強制修改。`)) return;
+
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      if (window.google && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res.success) {
+              showGlobalAlert(res.message, 'success');
+              loadPendingUsers();
+              loadAllUsers();
+            } else {
+              showGlobalAlert(res.message, 'error');
+            }
+          })
+          .gasApproveUser(token, empId);
+      } else {
+        showGlobalAlert(`地端展示：工號 [${empId}] 核可成功！預設密碼 000000`, 'success');
+        pendingUsersCache = pendingUsersCache.filter(u => u.emp_id !== empId);
+        renderPendingTable(pendingUsersCache);
+      }
+    }
+
+    function rejectUser(empId) {
+      if (!confirm(`確定駁回工號 [${empId}] 之申請？`)) return;
+
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      if (window.google && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res.success) {
+              showGlobalAlert(res.message, 'info');
+              loadPendingUsers();
+            } else {
+              showGlobalAlert(res.message, 'error');
+            }
+          })
+          .gasRejectUser(token, empId);
+      }
+    }
+
+    function loadAllUsers() {
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      const tbody = document.getElementById('all-users-tbody');
+
+      if (window.google && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res.success) {
+              allUsersCache = res.users || [];
+              renderAllUsersTable(allUsersCache);
+            }
+          })
+          .gasGetAllUsers(token);
+      } else {
+        allUsersCache = [
+          { emp_id: 'A0001', name: '開發主管', department: '招商處', role: 'admin', status: 'approved', locked: false, last_login_at: '2025-01-15 09:00:00' },
+          { emp_id: 'B0012', name: '營運專員A', department: '營運處', role: 'viewer', status: 'approved', locked: true, last_login_at: '2025-01-14 17:30:00' }
+        ];
+        renderAllUsersTable(allUsersCache);
+      }
+    }
+
+    function renderAllUsersTable(list) {
+      const tbody = document.getElementById('all-users-tbody');
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-slate-400">查無任何使用者紀錄</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = list.map(u => {
+        const isLocked = u.locked === true || String(u.locked).toUpperCase() === 'TRUE';
+        const isApproved = String(u.status).toLowerCase() === 'approved';
+        const isDisabled = String(u.status).toLowerCase() === 'disabled';
+
+        return `
+          <tr class="hover:bg-slate-700/30 transition">
+            <td class="p-3 font-mono font-bold text-white">${u.emp_id || ''}</td>
+            <td class="p-3 font-bold">${u.name || ''}</td>
+            <td class="p-3 text-slate-300">${u.department || ''}</td>
+            <td class="p-3">
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${u.role === 'admin' ? 'bg-purple-900/60 text-purple-300 border border-purple-400/30' : 'bg-blue-900/50 text-blue-300 border border-blue-400/30'}">
+                ${u.role === 'admin' ? '管理者' : '檢視者'}
+              </span>
+            </td>
+            <td class="p-3">
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isDisabled ? 'bg-rose-900/60 text-rose-300' : isApproved ? 'bg-emerald-900/50 text-emerald-300' : 'bg-amber-900/50 text-amber-300'}">
+                ${u.status || '未知'}
+              </span>
+            </td>
+            <td class="p-3">
+              ${isLocked ? '<span class="text-rose-400 font-bold flex items-center gap-1"><i data-lucide="lock" class="w-3.5 h-3.5"></i> 已鎖定</span>' : '<span class="text-emerald-400">正常</span>'}
+            </td>
+            <td class="p-3 text-[11px] text-slate-400">${u.last_login_at || '未登入過'}</td>
+            <td class="p-3 text-right space-x-1.5">
+              ${isLocked || isApproved ? `
+                <button onclick="unlockAndResetUser('${u.emp_id}')" class="px-2 py-1 bg-blue-600/30 hover:bg-blue-600 text-blue-200 hover:text-white font-bold rounded-lg transition text-[11px]">
+                  解鎖/重置密碼
+                </button>
+              ` : ''}
+              ${!isDisabled ? `
+                <button onclick="disableUser('${u.emp_id}')" class="px-2 py-1 bg-slate-700 hover:bg-rose-700 text-slate-300 hover:text-white font-bold rounded-lg transition text-[11px]">
+                  停用
+                </button>
+              ` : ''}
+            </td>
+          </tr>
+        `;
+      }).join('');
+      lucide.createIcons();
+    }
+
+    function filterUsersTable() {
+      const q = document.getElementById('user-search-input').value.trim().toLowerCase();
+      if (!q) {
+        renderAllUsersTable(allUsersCache);
+        return;
+      }
+      const filtered = allUsersCache.filter(u => 
+        (u.emp_id && u.emp_id.toLowerCase().includes(q)) ||
+        (u.name && u.name.toLowerCase().includes(q)) ||
+        (u.department && u.department.toLowerCase().includes(q))
+      );
+      renderAllUsersTable(filtered);
+    }
+
+    function unlockAndResetUser(empId) {
+      if (!confirm(`確定解鎖並將工號 [${empId}] 的密碼重置為 000000？\n重設完成後請自行口頭或私訊告知對方。`)) return;
+
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      if (window.google && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res.success) {
+              showGlobalAlert(res.message, 'success');
+              loadAllUsers();
+            } else {
+              showGlobalAlert(res.message, 'error');
+            }
+          })
+          .gasUnlockAndResetUser(token, empId);
+      } else {
+        showGlobalAlert(`地端展示：工號 [${empId}] 已解鎖並重設為 000000`, 'success');
+      }
+    }
+
+    function disableUser(empId) {
+      if (!confirm(`確定停用工號 [${empId}]？該帳號將無法繼續登入。`)) return;
+
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      if (window.google && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res.success) {
+              showGlobalAlert(res.message, 'info');
+              loadAllUsers();
+            } else {
+              showGlobalAlert(res.message, 'error');
+            }
+          })
+          .gasDisableUser(token, empId);
+      }
+    }
+
+    // =========================================================================
+    // 模組 2: 月結資料 Excel 增量更新
+    // =========================================================================
+
+    function handleExcelSelect(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        try {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const json = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+          if (!json || json.length === 0) {
+            showGlobalAlert('選取的 Excel 檔案未包含任何數據', 'error');
+            return;
+          }
+
+          parsedExcelData = json;
+          showExcelPreview(file.name, json);
+        } catch (err) {
+          showGlobalAlert('Excel 檔案解析失敗: ' + err.message, 'error');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function showExcelPreview(fileName, data) {
+      document.getElementById('excel-preview-section').classList.remove('hidden');
+      document.getElementById('preview-file-name').innerText = fileName;
+      document.getElementById('preview-row-count').innerText = `共 ${data.length} 筆資料`;
+
+      const headers = Object.keys(data[0] || {});
+      const thead = document.getElementById('preview-thead');
+      thead.innerHTML = `<tr>${headers.map(h => `<th class="p-2.5 whitespace-nowrap">${h}</th>`).join('')}</tr>`;
+
+      const tbody = document.getElementById('preview-tbody');
+      const previewRows = data.slice(0, 10);
+      tbody.innerHTML = previewRows.map(row => `
+        <tr class="hover:bg-slate-700/30">
+          ${headers.map(h => `<td class="p-2.5 whitespace-nowrap">${row[h]}</td>`).join('')}
+        </tr>
+      `).join('');
+
+      if (data.length > 10) {
+        tbody.innerHTML += `<tr><td colspan="${headers.length}" class="p-3 text-center text-slate-400 bg-[#161e46]/40">...其餘 ${data.length - 10} 筆資料略過預覽...</td></tr>`;
+      }
+    }
+
+    function clearExcelUpload() {
+      parsedExcelData = [];
+      document.getElementById('excel-file-input').value = '';
+      document.getElementById('excel-preview-section').classList.add('hidden');
+    }
+
+    function submitExcelUpsert() {
+      if (!parsedExcelData || parsedExcelData.length === 0) {
+        showGlobalAlert('請先選取 Excel 檔案', 'error');
+        return;
+      }
+
+      if (!confirm(`確定將這 ${parsedExcelData.length} 筆月結資料增量寫入 Google Sheets？\n既有之專櫃與年月資料將自動覆蓋更新，其餘將新增。`)) return;
+
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      const btn = document.getElementById('submit-excel-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 增量寫入中...';
+
+      if (window.google && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="database" class="w-4 h-4"></i> <span>確認增量 Upsert 更新</span>';
+            lucide.createIcons();
+
+            if (res.success) {
+              showGlobalAlert(res.message, 'success');
+              clearExcelUpload();
+            } else {
+              showGlobalAlert(res.message || '寫入失敗', 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="database" class="w-4 h-4"></i> <span>確認增量 Upsert 更新</span>';
+            lucide.createIcons();
+            showGlobalAlert('伺服器錯誤: ' + (err.message || err), 'error');
+          })
+          .upsertMonthlyData(token, parsedExcelData);
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="database" class="w-4 h-4"></i> <span>確認增量 Upsert 更新</span>';
+        lucide.createIcons();
+        showGlobalAlert(`地端展示：成功更新 5 筆，新增 10 筆月結資料！`, 'success');
+        clearExcelUpload();
+      }
+    }
+
+    // =========================================================================
+    // 模組 3: 專櫃合約主檔維護 (Store_Contract_Master)
+    // =========================================================================
+
+    function loadMasterData() {
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      const tbody = document.getElementById('master-tbody');
+      tbody.innerHTML = '<tr><td colspan="11" class="p-6 text-center text-slate-400">載入專櫃主檔資料中...</td></tr>';
+
+      if (window.google && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res.success) {
+              masterDataCache = res.data || [];
+              renderMasterTable(masterDataCache);
+            } else {
+              tbody.innerHTML = `<tr><td colspan="11" class="p-6 text-center text-rose-400">${res.error || res.message}</td></tr>`;
+            }
+          })
+          .getMasterData(token);
+      } else {
+        // 地端測試模擬
+        masterDataCache = [
+          { '專櫃編號': '00008', '專櫃名稱': '示範品牌專櫃A', '廠商名稱': '示範服飾有限公司', '樓層': '1F', '品類大類': '流行服飾', '租賃坪數': 120.5, '合約起始日': '2024-01-01', '合約到期日': '2026-12-31', '約定抽成別': '一般抽成', '約定抽成率': 0.12, '月約定保底金額': 250000 }
+        ];
+        renderMasterTable(masterDataCache);
+      }
+    }
+
+    function renderMasterTable(list) {
+      const tbody = document.getElementById('master-tbody');
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" class="p-6 text-center text-slate-400">查無任何專櫃主檔資料</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = list.map(item => {
+        const id = item['專櫃編號'] || item['ID'] || item['Vendor_ID'] || '';
+        const name = item['專櫃名稱'] || item['Name'] || '';
+        const vendor = item['廠商名稱'] || item['Vendor'] || '';
+        const floor = item['樓層'] || item['Floor'] || '';
+        const cat = item['品類大類'] || item['Category'] || '';
+        const area = item['租賃坪數'] || item['Area'] || '';
+        const start = item['合約起始日'] || '';
+        const end = item['合約到期日'] || '';
+        const commType = item['約定抽成別'] || '';
+        const commRate = item['約定抽成率'] || '';
+        const minShort = item['月約定保底金額'] || '';
+
+        return `
+          <tr class="hover:bg-slate-700/30 transition cursor-pointer" onclick="openEditMasterDrawer('${id}')">
+            <td class="p-3 font-mono font-bold text-white">${id}</td>
+            <td class="p-3 font-bold text-cyan-300 hover:underline">${name}</td>
+            <td class="p-3 text-slate-300">${vendor}</td>
+            <td class="p-3 font-bold">${floor}</td>
+            <td class="p-3 text-slate-300">${cat}</td>
+            <td class="p-3">${area ? area + ' 坪' : '-'}</td>
+            <td class="p-3 text-[11px] text-slate-400 whitespace-nowrap">${start} ~ ${end}</td>
+            <td class="p-3 text-slate-300">${commType}</td>
+            <td class="p-3 font-mono font-bold">${commRate ? (commRate * 100).toFixed(1) + '%' : '-'}</td>
+            <td class="p-3 font-mono text-emerald-300">${minShort ? Number(minShort).toLocaleString() : '-'}</td>
+            <td class="p-3 text-right">
+              <button onclick="event.stopPropagation(); openEditMasterDrawer('${id}')" class="px-2.5 py-1 bg-blue-600/30 hover:bg-blue-600 text-blue-200 hover:text-white font-bold rounded-lg transition text-[11px]">
+                編輯
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function filterMasterTable() {
+      const q = document.getElementById('master-search-input').value.trim().toLowerCase();
+      if (!q) {
+        renderMasterTable(masterDataCache);
+        return;
+      }
+      const filtered = masterDataCache.filter(item => {
+        const id = String(item['專櫃編號'] || item['ID'] || '').toLowerCase();
+        const name = String(item['專櫃名稱'] || item['Name'] || '').toLowerCase();
+        const vendor = String(item['廠商名稱'] || item['Vendor'] || '').toLowerCase();
+        const floor = String(item['樓層'] || item['Floor'] || '').toLowerCase();
+        return id.includes(q) || name.includes(q) || vendor.includes(q) || floor.includes(q);
+      });
+      renderMasterTable(filtered);
+    }
+
+    function openEditMasterDrawer(storeId) {
+      const item = masterDataCache.find(x => String(x['專櫃編號'] || x['ID'] || '') === String(storeId));
+      if (!item) return;
+
+      document.getElementById('drawer-mode').value = 'edit';
+      document.getElementById('drawer-title').innerText = `編輯專櫃 [${storeId}]`;
+      document.getElementById('drawer-icon').setAttribute('data-lucide', 'edit-3');
+
+      document.getElementById('field-id').value = storeId;
+      document.getElementById('field-id').readOnly = true;
+      document.getElementById('field-name').value = item['專櫃名稱'] || item['Name'] || '';
+      document.getElementById('field-vendor').value = item['廠商名稱'] || item['Vendor'] || '';
+      document.getElementById('field-floor').value = item['樓層'] || item['Floor'] || '';
+      document.getElementById('field-category').value = item['品類大類'] || item['Category'] || '';
+      document.getElementById('field-area').value = item['租賃坪數'] || item['Area'] || '';
+      document.getElementById('field-start').value = item['合約起始日'] || '';
+      document.getElementById('field-end').value = item['合約到期日'] || '';
+      document.getElementById('field-commtype').value = item['約定抽成別'] || '';
+      document.getElementById('field-commrate').value = item['約定抽成率'] || '';
+      document.getElementById('field-minshortage').value = item['月約定保底金額'] || '';
+
+      openDrawer();
+    }
+
+    function openCreateMasterDrawer() {
+      document.getElementById('drawer-mode').value = 'create';
+      document.getElementById('drawer-title').innerText = '新增專櫃合約主檔';
+      document.getElementById('drawer-icon').setAttribute('data-lucide', 'plus-circle');
+
+      document.getElementById('field-id').value = '';
+      document.getElementById('field-id').readOnly = false;
+      document.getElementById('field-name').value = '';
+      document.getElementById('field-vendor').value = '';
+      document.getElementById('field-floor').value = '';
+      document.getElementById('field-category').value = '';
+      document.getElementById('field-area').value = '';
+      document.getElementById('field-start').value = '';
+      document.getElementById('field-end').value = '';
+      document.getElementById('field-commtype').value = '一般抽成';
+      document.getElementById('field-commrate').value = '';
+      document.getElementById('field-minshortage').value = '';
+
+      openDrawer();
+    }
+
+    function openDrawer() {
+      document.getElementById('master-drawer-backdrop').classList.remove('hidden');
+      document.getElementById('master-drawer').classList.remove('hidden-drawer');
+      lucide.createIcons();
+    }
+
+    function closeMasterDrawer() {
+      document.getElementById('master-drawer-backdrop').classList.add('hidden');
+      document.getElementById('master-drawer').classList.add('hidden-drawer');
+    }
+
+    function handleMasterSubmit(e) {
+      e.preventDefault();
+      const mode = document.getElementById('drawer-mode').value;
+      const id = document.getElementById('field-id').value.trim();
+
+      const fields = {
+        '專櫃編號': id,
+        '專櫃名稱': document.getElementById('field-name').value.trim(),
+        '廠商名稱': document.getElementById('field-vendor').value.trim(),
+        '樓層': document.getElementById('field-floor').value.trim(),
+        '品類大類': document.getElementById('field-category').value.trim(),
+        '租賃坪數': Number(document.getElementById('field-area').value) || '',
+        '合約起始日': document.getElementById('field-start').value.trim(),
+        '合約到期日': document.getElementById('field-end').value.trim(),
+        '約定抽成別': document.getElementById('field-commtype').value.trim(),
+        '約定抽成率': Number(document.getElementById('field-commrate').value) || '',
+        '月約定保底金額': Number(document.getElementById('field-minshortage').value) || ''
+      };
+
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      const saveBtn = document.getElementById('drawer-save-btn');
+      saveBtn.disabled = true;
+      saveBtn.innerText = '儲存中...';
+
+      if (window.google && google.script && google.script.run) {
+        const handler = function(res) {
+          saveBtn.disabled = false;
+          saveBtn.innerText = '儲存專櫃資料';
+          if (res.success) {
+            showGlobalAlert(res.message, 'success');
+            closeMasterDrawer();
+            loadMasterData();
+          } else {
+            showGlobalAlert(res.message || '儲存失敗', 'error');
+          }
+        };
+
+        if (mode === 'edit') {
+          google.script.run.withSuccessHandler(handler).updateMasterRecord(token, id, fields);
+        } else {
+          google.script.run.withSuccessHandler(handler).insertMasterRecord(token, fields);
+        }
+      } else {
+        saveBtn.disabled = false;
+        saveBtn.innerText = '儲存專櫃資料';
+        showGlobalAlert(`地端展示：專櫃 [${id}] 儲存成功！`, 'success');
+        closeMasterDrawer();
+      }
+    }
+  </script>
+</body>
+</html>

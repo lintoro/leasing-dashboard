@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>帳號申請 | 專櫃營運與招商戰情室</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+    
+    :root {
+      --primary-navy: #1E2761;
+      --secondary-blue: #CADCFC;
+      --bg-dark: #1a224a;
+      --card-bg: #212c60;
+      --card-border: #36458d;
+      --accent-highlight: #4d7cfe;
+    }
+
+    body {
+      font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-dark);
+      color: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .form-card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      box-shadow: 0 10px 30px rgba(12, 17, 48, 0.5);
+    }
+  </style>
+</head>
+<body class="p-4 selection:bg-blue-500 selection:text-white">
+
+  <div class="w-full max-w-lg form-card rounded-2xl p-6 sm:p-8 space-y-6 relative overflow-hidden">
+    <!-- 頂部標題 -->
+    <div class="flex items-center gap-3 border-b border-[#36458d] pb-5">
+      <div class="w-11 h-11 rounded-xl bg-[#CADCFC] text-[#1E2761] flex items-center justify-center shadow font-bold shrink-0">
+        <i data-lucide="user-plus" class="w-6 h-6"></i>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+          戰情室存取權限申請
+        </h1>
+        <p class="text-xs text-[#CADCFC]/80 font-medium">填妥以下公務資料，送交系統管理員核可</p>
+      </div>
+    </div>
+
+    <!-- 訊息提示條 -->
+    <div id="alert-box" class="hidden rounded-xl p-3 text-xs font-medium flex items-start gap-2 transition-all">
+      <i id="alert-icon" data-lucide="alert-circle" class="w-4 h-4 shrink-0 mt-0.5"></i>
+      <span id="alert-msg"></span>
+    </div>
+
+    <!-- 申請表單 -->
+    <form id="register-form" onsubmit="handleRegister(event)" class="space-y-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label for="emp-id" class="block text-xs font-bold text-[#CADCFC] mb-1.5 flex items-center gap-1.5">
+            <i data-lucide="badge-check" class="w-3.5 h-3.5 text-blue-400"></i> 公務工號 (必填)
+          </label>
+          <input type="text" id="emp-id" required placeholder="例：A0123"
+                 class="w-full bg-[#161e46] text-white placeholder-slate-400 text-sm font-semibold rounded-xl px-3.5 h-[42px] border border-[#36458d] focus:border-[#4d7cfe] focus:ring-1 focus:ring-[#4d7cfe] focus:outline-none transition uppercase">
+        </div>
+
+        <div>
+          <label for="user-name" class="block text-xs font-bold text-[#CADCFC] mb-1.5 flex items-center gap-1.5">
+            <i data-lucide="user" class="w-3.5 h-3.5 text-blue-400"></i> 真實姓名 (必填)
+          </label>
+          <input type="text" id="user-name" required placeholder="例：王小明"
+                 class="w-full bg-[#161e46] text-white placeholder-slate-400 text-sm font-semibold rounded-xl px-3.5 h-[42px] border border-[#36458d] focus:border-[#4d7cfe] focus:ring-1 focus:ring-[#4d7cfe] focus:outline-none transition">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label for="department" class="block text-xs font-bold text-[#CADCFC] mb-1.5 flex items-center gap-1.5">
+            <i data-lucide="building" class="w-3.5 h-3.5 text-blue-400"></i> 所屬單位 / 部門 (必填)
+          </label>
+          <input type="text" id="department" required placeholder="例：招商一部 / 營運課"
+                 class="w-full bg-[#161e46] text-white placeholder-slate-400 text-sm font-semibold rounded-xl px-3.5 h-[42px] border border-[#36458d] focus:border-[#4d7cfe] focus:ring-1 focus:ring-[#4d7cfe] focus:outline-none transition">
+        </div>
+
+        <div>
+          <label for="email" class="block text-xs font-bold text-[#CADCFC] mb-1.5 flex items-center gap-1.5">
+            <i data-lucide="mail" class="w-3.5 h-3.5 text-slate-400"></i> 公務信箱 (選填)
+          </label>
+          <input type="email" id="email" placeholder="name@company.com"
+                 class="w-full bg-[#161e46] text-white placeholder-slate-400 text-sm font-semibold rounded-xl px-3.5 h-[42px] border border-[#36458d] focus:border-[#4d7cfe] focus:ring-1 focus:ring-[#4d7cfe] focus:outline-none transition">
+        </div>
+      </div>
+
+      <div>
+        <label for="reason" class="block text-xs font-bold text-[#CADCFC] mb-1.5 flex items-center gap-1.5">
+          <i data-lucide="file-text" class="w-3.5 h-3.5 text-slate-400"></i> 申請原因 / 業務備註 (選填)
+        </label>
+        <textarea id="reason" rows="2" placeholder="例：負責 B1 美食街專櫃合約檢討與營運追蹤..."
+                  class="w-full bg-[#161e46] text-white placeholder-slate-400 text-sm font-medium rounded-xl p-3 border border-[#36458d] focus:border-[#4d7cfe] focus:ring-1 focus:ring-[#4d7cfe] focus:outline-none transition resize-none"></textarea>
+      </div>
+
+      <!-- 說明小卡 -->
+      <div class="bg-[#161e46]/80 p-3 rounded-xl border border-[#36458d]/60 text-[11px] text-slate-300 space-y-1 leading-relaxed">
+        <div class="flex items-center gap-1 text-[#CADCFC] font-semibold">
+          <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400"></i> 審核須知與開通說明：
+        </div>
+        <p>1. 送出申請後，系統管理員將進行資格審核。</p>
+        <p>2. 核可後系統自動配發預設初始密碼 <code class="bg-[#1E2761] px-1 py-0.5 rounded text-amber-300 font-mono font-bold">000000</code>。</p>
+        <p>3. 第一次登入時，系統將強制要求修改為自訂安全密碼。</p>
+      </div>
+
+      <button type="submit" id="submit-btn"
+              class="w-full h-[44px] bg-[#4d7cfe] hover:bg-blue-600 active:scale-[0.98] text-white font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 text-sm">
+        <i data-lucide="send" class="w-4 h-4"></i>
+        <span>送出申請</span>
+      </button>
+    </form>
+
+    <!-- 底部切換區 -->
+    <div class="pt-2 border-t border-[#36458d]/70 flex items-center justify-between text-xs">
+      <span class="text-slate-400">已有帳號？</span>
+      <a href="javascript:void(0)" onclick="navigateTo('login')" class="text-[#CADCFC] hover:text-white font-bold flex items-center gap-1 transition">
+        <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+        <span>返回登入頁</span>
+      </a>
+    </div>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    function showAlert(message, type = 'error') {
+      const box = document.getElementById('alert-box');
+      const msg = document.getElementById('alert-msg');
+      const icon = document.getElementById('alert-icon');
+      
+      box.className = 'rounded-xl p-3 text-xs font-medium flex items-start gap-2 transition-all ' + 
+        (type === 'error' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
+         type === 'success' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+         'bg-blue-500/20 text-blue-200 border border-blue-500/30');
+
+      icon.setAttribute('data-lucide', type === 'error' ? 'alert-circle' : type === 'success' ? 'check-circle-2' : 'info');
+      msg.innerText = message;
+      box.classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function navigateTo(page) {
+      if (window.google && google.script && google.script.run) {
+        google.script.run.withSuccessHandler(function(url) {
+          window.location.href = url + '?page=' + page;
+        }).getScriptUrl();
+      } else {
+        const urlParams = new URLSearchParams(window.location.search);
+        urlParams.set('page', page);
+        window.location.search = urlParams.toString();
+      }
+    }
+
+    function handleRegister(e) {
+      e.preventDefault();
+      const formData = {
+        empId: document.getElementById('emp-id').value.trim(),
+        name: document.getElementById('user-name').value.trim(),
+        department: document.getElementById('department').value.trim(),
+        email: document.getElementById('email').value.trim(),
+        reason: document.getElementById('reason').value.trim()
+      };
+
+      if (!formData.empId || !formData.name || !formData.department) {
+        showAlert('請完整填寫必填欄位 (工號、姓名、部門)');
+        return;
+      }
+
+      const submitBtn = document.getElementById('submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 提交中...';
+
+      if (window.google && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> <span>送出申請</span>';
+            lucide.createIcons();
+
+            if (res.success) {
+              showAlert(res.message, 'success');
+              setTimeout(function() {
+                navigateTo('pending');
+              }, 1200);
+            } else {
+              showAlert(res.message || '申請失敗');
+            }
+          })
+          .withFailureHandler(function(err) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> <span>送出申請</span>';
+            lucide.createIcons();
+            showAlert('伺服器連線異常: ' + (err.message || err));
+          })
+          .gasSubmitRequest(formData);
+      } else {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> <span>送出申請</span>';
+        lucide.createIcons();
+        showAlert('地端展示：申請送出成功！即將轉往等待頁', 'success');
+        setTimeout(() => navigateTo('pending'), 1000);
+      }
+    }
+  </script>
+</body>
+</html>

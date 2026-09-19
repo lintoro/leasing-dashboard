@@ -3,3 +3,6 @@ AGENTS.md
 .git/
 .gitignore
 README.md
+config.local.js
+config.local.example.js
+.env*

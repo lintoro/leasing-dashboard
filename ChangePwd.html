@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>變更密碼 | 專櫃營運與招商戰情室</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+    
+    :root {
+      --primary-navy: #1E2761;
+      --secondary-blue: #CADCFC;
+      --bg-dark: #1a224a;
+      --card-bg: #212c60;
+      --card-border: #36458d;
+      --accent-highlight: #4d7cfe;
+    }
+
+    body {
+      font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-dark);
+      color: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pwd-card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      box-shadow: 0 10px 30px rgba(12, 17, 48, 0.5);
+    }
+  </style>
+</head>
+<body class="p-4 selection:bg-blue-500 selection:text-white">
+
+  <div class="w-full max-w-md pwd-card rounded-2xl p-6 sm:p-8 space-y-6 relative overflow-hidden">
+    <!-- 頂部標題 -->
+    <div class="flex items-center gap-3 border-b border-[#36458d] pb-5">
+      <div class="w-11 h-11 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-300 flex items-center justify-center shadow font-bold shrink-0">
+        <i data-lucide="shield-alert" class="w-6 h-6"></i>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+          設定自訂安全密碼
+        </h1>
+        <p class="text-xs text-[#CADCFC]/80 font-medium">首次登入或密碼重置後，請務必變更密碼</p>
+      </div>
+    </div>
+
+    <!-- 訊息提示條 -->
+    <div id="alert-box" class="hidden rounded-xl p-3 text-xs font-medium flex items-start gap-2 transition-all">
+      <i id="alert-icon" data-lucide="alert-circle" class="w-4 h-4 shrink-0 mt-0.5"></i>
+      <span id="alert-msg"></span>
+    </div>
+
+    <!-- 變更密碼表單 -->
+    <form id="pwd-form" onsubmit="handleChangePassword(event)" class="space-y-4">
+      <div>
+        <label for="old-password" class="block text-xs font-bold text-[#CADCFC] mb-1.5 flex items-center gap-1.5">
+          <i data-lucide="key" class="w-3.5 h-3.5"></i> 原密碼 (或預設密碼 000000)
+        </label>
+        <input type="password" id="old-password" required placeholder="若為新開通請輸入 000000"
+               class="w-full bg-[#161e46] text-white placeholder-slate-400 text-sm font-semibold rounded-xl px-3.5 h-[42px] border border-[#36458d] focus:border-[#4d7cfe] focus:ring-1 focus:ring-[#4d7cfe] focus:outline-none transition">
+      </div>
+
+      <div>
+        <label for="new-password" class="block text-xs font-bold text-[#CADCFC] mb-1.5 flex items-center gap-1.5">
+          <i data-lucide="lock" class="w-3.5 h-3.5 text-emerald-400"></i> 新密碼 (最少 6 碼)
+        </label>
+        <input type="password" id="new-password" required placeholder="請輸入新設定之安全密碼"
+               class="w-full bg-[#161e46] text-white placeholder-slate-400 text-sm font-semibold rounded-xl px-3.5 h-[42px] border border-[#36458d] focus:border-[#4d7cfe] focus:ring-1 focus:ring-[#4d7cfe] focus:outline-none transition">
+      </div>
+
+      <div>
+        <label for="confirm-password" class="block text-xs font-bold text-[#CADCFC] mb-1.5 flex items-center gap-1.5">
+          <i data-lucide="check-check" class="w-3.5 h-3.5 text-emerald-400"></i> 再次確認新密碼
+        </label>
+        <input type="password" id="confirm-password" required placeholder="請再次輸入相同新密碼"
+               class="w-full bg-[#161e46] text-white placeholder-slate-400 text-sm font-semibold rounded-xl px-3.5 h-[42px] border border-[#36458d] focus:border-[#4d7cfe] focus:ring-1 focus:ring-[#4d7cfe] focus:outline-none transition">
+      </div>
+
+      <div class="text-[11px] text-slate-400 leading-normal pl-1">
+        • 新密碼長度至少需 6 碼以上，不可為預設之 000000。
+      </div>
+
+      <button type="submit" id="submit-btn"
+              class="w-full h-[44px] bg-[#4d7cfe] hover:bg-blue-600 active:scale-[0.98] text-white font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 text-sm">
+        <i data-lucide="save" class="w-4 h-4"></i>
+        <span>確認並啟用新密碼</span>
+      </button>
+    </form>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    function showAlert(message, type = 'error') {
+      const box = document.getElementById('alert-box');
+      const msg = document.getElementById('alert-msg');
+      const icon = document.getElementById('alert-icon');
+      
+      box.className = 'rounded-xl p-3 text-xs font-medium flex items-start gap-2 transition-all ' + 
+        (type === 'error' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
+         type === 'success' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+         'bg-blue-500/20 text-blue-200 border border-blue-500/30');
+
+      icon.setAttribute('data-lucide', type === 'error' ? 'alert-circle' : type === 'success' ? 'check-circle-2' : 'info');
+      msg.innerText = message;
+      box.classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function navigateTo(page) {
+      if (window.google && google.script && google.script.run) {
+        google.script.run.withSuccessHandler(function(url) {
+          window.location.href = url + '?page=' + page;
+        }).getScriptUrl();
+      } else {
+        const urlParams = new URLSearchParams(window.location.search);
+        urlParams.set('page', page);
+        window.location.search = urlParams.toString();
+      }
+    }
+
+    function handleChangePassword(e) {
+      e.preventDefault();
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      const oldPwd = document.getElementById('old-password').value.trim();
+      const newPwd = document.getElementById('new-password').value.trim();
+      const confirmPwd = document.getElementById('confirm-password').value.trim();
+
+      if (!token) {
+        showAlert('尚未登入或憑證已失效，請先前往登入。');
+        setTimeout(() => navigateTo('login'), 1500);
+        return;
+      }
+
+      if (newPwd.length < 6) {
+        showAlert('新密碼長度至少需 6 碼以上');
+        return;
+      }
+
+      if (newPwd === '000000') {
+        showAlert('新密碼不可為系統預設之 000000，請設定安全自訂密碼');
+        return;
+      }
+
+      if (newPwd !== confirmPwd) {
+        showAlert('兩次輸入的新密碼不相符，請再次確認');
+        return;
+      }
+
+      const submitBtn = document.getElementById('submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 更新中...';
+
+      if (window.google && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i data-lucide="save" class="w-4 h-4"></i> <span>確認並啟用新密碼</span>';
+            lucide.createIcons();
+
+            if (res.success) {
+              showAlert(res.message + ' 即將進入系統...', 'success');
+              const role = localStorage.getItem('LEASING_USER_ROLE');
+              setTimeout(function() {
+                navigateTo(role === 'admin' ? 'admin' : 'dashboard');
+              }, 1200);
+            } else {
+              showAlert(res.message || '變更密碼失敗');
+            }
+          })
+          .withFailureHandler(function(err) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i data-lucide="save" class="w-4 h-4"></i> <span>確認並啟用新密碼</span>';
+            lucide.createIcons();
+            showAlert('伺服器連線異常: ' + (err.message || err));
+          })
+          .gasChangePassword(token, oldPwd, newPwd);
+      } else {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i data-lucide="save" class="w-4 h-4"></i> <span>確認並啟用新密碼</span>';
+        lucide.createIcons();
+        showAlert('地端展示：密碼已成功變更！即將轉往首頁', 'success');
+        setTimeout(() => navigateTo('dashboard'), 1000);
+      }
+    }
+  </script>
+</body>
+</html>

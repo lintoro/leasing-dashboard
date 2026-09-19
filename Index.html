@@ -127,21 +127,38 @@
         <div class="min-w-0">
           <h1 class="text-sm sm:text-base font-bold tracking-tight text-white truncate flex items-center gap-1.5">
             專櫃營運與招商戰情室
-            <span class="text-xs px-2 py-0.5 rounded-full bg-[#161e46] text-emerald-400 border border-emerald-500/30 font-semibold">v1.3</span>
-            <span id="badge-executive" onclick="window.handleSecretUnlock()" class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#CADCFC] text-[#1E2761] cursor-default select-none transition-all active:scale-95 inline-block">主管版</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-[#161e46] text-emerald-400 border border-emerald-500/30 font-semibold">v2.0 WebApp</span>
           </h1>
-          <p id="leasing-hub-title" class="text-[10px] text-[#CADCFC] truncate cursor-default select-none inline-block font-medium" onclick="window.openSettingsModal()">Leasing Hub</p>
+          <p id="leasing-hub-title" class="text-[10px] text-[#CADCFC] truncate cursor-default select-none inline-block font-medium" onclick="window.openSettingsModal()">Leasing Hub Dashboard</p>
         </div>
       </div>
 
       <!-- Action Bar -->
       <div class="flex items-center gap-1.5 shrink-0">
-        <div class="hidden md:flex items-center gap-1.5 bg-[#161e46] px-2.5 py-1 rounded-lg border border-[#36458d]">
-          <span class="w-2 h-2 rounded-full bg-cyan-400" id="sync-status-dot"></span>
-          <span class="text-[11px] font-semibold text-[#CADCFC]" id="sync-status-text">展示模式 (2025/01/01)</span>
+        <!-- 登入身分標籤 -->
+        <div id="user-profile-badge" class="flex items-center gap-1.5 bg-[#161e46] px-2.5 py-1 rounded-lg border border-[#36458d] text-xs">
+          <i data-lucide="user" class="w-3.5 h-3.5 text-cyan-300"></i>
+          <span id="user-display-name" class="font-bold text-white">訪客</span>
+          <span id="user-display-role" class="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-900/60 text-blue-200 border border-blue-400/30 font-semibold">VIEWER</span>
         </div>
 
-        <button id="btn-sync" type="button" onclick="event.preventDefault(); event.stopPropagation(); window.triggerSync(event); return false;" title="重設回預設展示模式" class="icon-action-btn bg-[#4d7cfe] hover:bg-blue-600 text-white shadow">
+        <!-- Admin 專屬按鈕 -->
+        <button id="btn-goto-admin" type="button" onclick="navigateTo('admin')" title="前往管理後台" class="hidden h-[34px] px-2.5 bg-purple-700 hover:bg-purple-600 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow">
+          <i data-lucide="shield" class="w-3.5 h-3.5"></i>
+          <span class="hidden sm:inline">管理後台</span>
+        </button>
+
+        <!-- 登出按鈕 -->
+        <button id="btn-logout" type="button" onclick="handleLogout()" title="登出系統" class="h-[34px] px-2 bg-[#161e46] hover:bg-rose-900/40 text-slate-300 hover:text-rose-200 border border-[#36458d] rounded-lg text-xs font-bold transition flex items-center gap-1">
+          <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+        </button>
+
+        <div class="hidden md:flex items-center gap-1.5 bg-[#161e46] px-2.5 py-1 rounded-lg border border-[#36458d]">
+          <span class="w-2 h-2 rounded-full bg-cyan-400" id="sync-status-dot"></span>
+          <span class="text-[11px] font-semibold text-[#CADCFC]" id="sync-status-text">展示模式</span>
+        </div>
+
+        <button id="btn-sync" type="button" onclick="event.preventDefault(); event.stopPropagation(); window.triggerSync(event); return false;" title="重新同步資料" class="icon-action-btn bg-[#4d7cfe] hover:bg-blue-600 text-white shadow">
           <i data-lucide="refresh-cw" class="w-4 h-4" id="sync-icon"></i>
         </button>
 
@@ -1616,8 +1633,77 @@
       }
     }
 
+    function navigateTo(page) {
+      if (window.google && google.script && google.script.run) {
+        google.script.run.withSuccessHandler(function(url) {
+          window.location.href = url + '?page=' + page;
+        }).getScriptUrl();
+      } else {
+        const urlParams = new URLSearchParams(window.location.search);
+        urlParams.set('page', page);
+        window.location.search = urlParams.toString();
+      }
+    }
+
+    function handleLogout() {
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      if (window.google && google.script && google.script.run && token) {
+        google.script.run.gasLogout(token);
+      }
+      localStorage.clear();
+      navigateTo('login');
+    }
+
+    function checkDashboardAuth() {
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      const role = localStorage.getItem('LEASING_USER_ROLE');
+      const name = localStorage.getItem('LEASING_USER_NAME');
+      const empId = localStorage.getItem('LEASING_USER_EMPID');
+
+      if (window.google && google.script && google.script.run) {
+        if (!token) {
+          // 未登入，強制導向登入頁
+          navigateTo('login');
+          return;
+        }
+        google.script.run
+          .withSuccessHandler(function(authRes) {
+            if (!authRes.valid) {
+              localStorage.clear();
+              navigateTo('login');
+            } else {
+              renderUserInfo(authRes.name || authRes.empId, authRes.role);
+            }
+          })
+          .validateToken(token);
+      } else {
+        // 地端純展示模式
+        renderUserInfo(name || '展示人員', role || 'viewer');
+      }
+    }
+
+    function renderUserInfo(userName, userRole) {
+      const nameEl = document.getElementById('user-display-name');
+      const roleEl = document.getElementById('user-display-role');
+      const adminBtn = document.getElementById('btn-goto-admin');
+
+      if (nameEl) nameEl.innerText = userName || '已認證同仁';
+      if (roleEl) {
+        roleEl.innerText = userRole === 'admin' ? 'ADMIN' : 'VIEWER';
+        if (userRole === 'admin') {
+          roleEl.className = 'text-[10px] px-1.5 py-0.2 rounded-full bg-purple-900/60 text-purple-200 border border-purple-400/40 font-bold';
+        } else {
+          roleEl.className = 'text-[10px] px-1.5 py-0.2 rounded-full bg-blue-900/60 text-blue-200 border border-blue-400/30 font-semibold';
+        }
+      }
+      if (adminBtn && userRole === 'admin') {
+        adminBtn.classList.remove('hidden');
+      }
+    }
+
     window.onload = function() {
       lucide.createIcons();
+      checkDashboardAuth();
       rebuildMonthlyIndices();
       initFilters();
       window.applyRangePreset('LATEST_1M');
