@@ -13,6 +13,17 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- PapaParse for CSV parsing -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- 智慧環境感知：僅在本地測試環境 (file:// 或 localhost) 動態載入私有 config.local.js -->
+  <script>
+    if (window.location.protocol === 'file:' || 
+        window.location.hostname === 'localhost' || 
+        window.location.hostname === '127.0.0.1' || 
+        window.location.hostname === '') {
+      var localCfgScript = document.createElement('script');
+      localCfgScript.src = 'config.local.js';
+      document.head.appendChild(localCfgScript);
+    }
+  </script>
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
