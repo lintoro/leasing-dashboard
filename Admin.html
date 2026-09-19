@@ -506,14 +506,14 @@
     let currentUserSubTab = 'active';
 
     const TARGET_COLUMNS = [
-      { key: '專櫃編號', label: '專櫃編號', required: true, match: /專櫃編號|專櫃代碼|專櫃代號|專櫃ID|櫃位編號|櫃位代號|櫃位|櫃號|店號|Store_?ID|Vendor_?ID|^ID$/i },
-      { key: '銷售年月', label: '銷售年月', required: true, match: /銷售年月|銷售月份|結算年月|帳期年月|年月|期別|月份|帳期|Period|YM|YearMonth/i },
-      { key: '專櫃名稱', label: '專櫃名稱', required: false, match: /專櫃名稱|櫃位名稱|專櫃名|店名|品牌|Store_?Name|Name/i },
-      { key: '銷貨淨額', label: '銷貨淨額', required: false, match: /銷貨淨額|銷貨金額|銷貨|銷售額|營業額|總銷金額|總銷|淨額|業績|SalesNet|Sales/i },
-      { key: '銷貨稅額', label: '銷貨稅額', required: false, match: /銷貨稅額|稅額|銷項稅額|營業稅|Tax/i },
-      { key: '抽成額合計', label: '抽成額合計', required: false, match: /抽成額合計|抽成總額|抽成金額|抽成額|包底\/抽成|抽成|Commission/i },
-      { key: '保底抽成不足補收額', label: '保底抽成不足補收額', required: false, match: /保底抽成不足補收額|差額補收金額|不足補收額|不足補收|不足金額|保底補足|補收|Shortage/i },
-      { key: '本期實付專櫃金額', label: '本期實付專櫃金額', required: false, match: /本期實付專櫃金額|實付金額|應付廠商|實付專櫃|淨付金額|Payable/i }
+      { key: '專櫃編號', label: '專櫃編號', required: true, match: /^專櫃編號$|專櫃代碼|專櫃代號|專櫃ID|櫃位編號|櫃位代號|櫃位|櫃號|店號|Store_?ID|Vendor_?ID|^ID$/i },
+      { key: '銷售年月', label: '銷售年月', required: true, match: /結帳年月|銷售年月|銷售月份|結算年月|帳期年月|年月|期別|月份|帳期|Period|YM|YearMonth/i },
+      { key: '專櫃名稱', label: '專櫃名稱', required: false, match: /^專櫃名稱$|櫃位名稱|專櫃名|店名|品牌|Store_?Name|Name/i },
+      { key: '銷貨淨額', label: '銷貨淨額', required: false, match: /銷貨淨額_未稅金額|^銷貨淨額$|銷貨金額|銷貨|銷售額|營業額|總銷金額|總銷|淨額|業績|SalesNet|Sales/i },
+      { key: '銷貨稅額', label: '銷貨稅額', required: false, match: /銷貨淨額_稅額|^銷貨稅額$|銷項稅額|營業稅|Tax/i },
+      { key: '抽成額合計', label: '抽成額合計', required: false, match: /抽成額_合計|^抽成額合計$|抽成額_未稅金額|抽成總額|抽成金額|抽成額|包底\/抽成|抽成|Commission/i },
+      { key: '保底抽成不足補收額', label: '保底抽成不足補收額', required: false, match: /包底抽成不足|保底抽成不足補收額|差額補收金額|不足補收額|不足補收|不足金額|保底補足|補收|Shortage/i },
+      { key: '本期實付專櫃金額', label: '本期實付專櫃金額', required: false, match: /應付帳款|本期實付專櫃金額|實付金額|應付廠商|實付專櫃|淨付金額|Payable/i }
     ];
 
     // 初始化驗證
@@ -930,7 +930,7 @@
             return;
           }
 
-          // 2. 智慧掃描前 15 列，自動尋找最像表頭的一列
+          // 2. 智慧掃描前 15 列，自動尋找最像主表頭的一列
           let bestHeaderRowIdx = 0;
           let maxMatches = 0;
           for (let r = 0; r < Math.min(15, rawGrid.length); r++) {
@@ -947,28 +947,65 @@
             }
           }
 
-          const headers = (rawGrid[bestHeaderRowIdx] || []).map(h => String(h || '').trim()).filter(Boolean);
-          if (headers.length === 0) {
-            showGlobalAlert('無法辨識此 Excel 的欄位表頭，請確認檔案格式', 'error');
-            return;
+          // 檢查次一列是否為子表頭（如：未稅金額、稅額、免稅、合計、代扣...）
+          let isDoubleHeader = false;
+          let dataStartRowIdx = bestHeaderRowIdx + 1;
+          const topRow = rawGrid[bestHeaderRowIdx] || [];
+          const subRow = (bestHeaderRowIdx + 1 < rawGrid.length) ? (rawGrid[bestHeaderRowIdx + 1] || []) : [];
+          
+          const subHeaderKeywords = /未稅|稅額|免稅|合計|進貨|代扣|租金/;
+          const hasSubHeaders = subRow.some(cell => subHeaderKeywords.test(String(cell || '')));
+
+          if (hasSubHeaders) {
+            isDoubleHeader = true;
+            dataStartRowIdx = bestHeaderRowIdx + 2;
+          }
+
+          // 構建合成表頭清單 (若為雙列表頭，自動合成 主標題_子標題)
+          const headers = [];
+          const maxCols = Math.max(topRow.length, subRow.length);
+          let currentTopGroup = '';
+
+          for (let c = 0; c < maxCols; c++) {
+            const topText = String(topRow[c] || '').trim();
+            if (topText) currentTopGroup = topText;
+            const subText = isDoubleHeader ? String(subRow[c] || '').trim() : '';
+
+            let finalName = '';
+            if (isDoubleHeader && subText) {
+              finalName = `${currentTopGroup}_${subText}`;
+            } else {
+              finalName = topText || (currentTopGroup ? `${currentTopGroup}_欄${c+1}` : `欄位_${c+1}`);
+            }
+            headers.push(finalName);
           }
 
           parsedExcelHeaders = headers;
 
-          // 3. 組合數據列 (從表頭列次一列開始)
+          // 3. 組合數據列 (從資料起始列往下)，並自動排除合計列與頁碼列
           const rows = [];
-          for (let r = bestHeaderRowIdx + 1; r < rawGrid.length; r++) {
+          for (let r = dataStartRowIdx; r < rawGrid.length; r++) {
             const gridRow = rawGrid[r];
             if (!gridRow || !gridRow.some(c => String(c || '').trim() !== '')) continue;
+
+            const firstThreeCells = gridRow.slice(0, 4).map(c => String(c || '').trim()).join(' ');
+            // 過濾合計、總計、頁次等統計末尾列
+            if (/合計|總計|總計金額|小計|頁次|Page/i.test(firstThreeCells)) continue;
+
             const obj = {};
             headers.forEach((h, cIdx) => {
               obj[h] = gridRow[cIdx] !== undefined ? gridRow[cIdx] : '';
             });
+
+            // 過濾純頁碼如 1/1
+            const nonBlankValues = Object.values(obj).filter(v => String(v).trim() !== '');
+            if (nonBlankValues.length <= 1 && /^\d+\/\d+$/.test(String(nonBlankValues[0]).trim())) continue;
+
             rows.push(obj);
           }
 
           if (rows.length === 0) {
-            showGlobalAlert('在標題列下方未找到任何資料列，請確認 Excel 檔案內容', 'error');
+            showGlobalAlert('在標題列下方未找到任何有效資料列，請確認 Excel 檔案內容', 'error');
             return;
           }
 
@@ -982,7 +1019,7 @@
           });
 
           renderColumnMappingUI(headers);
-          showExcelPreview(file.name, rows, headers, bestHeaderRowIdx);
+          showExcelPreview(file.name, rows, headers, bestHeaderRowIdx, isDoubleHeader);
         } catch (err) {
           showGlobalAlert('Excel 檔案解析失敗: ' + err.message, 'error');
         }
@@ -1041,10 +1078,11 @@
       }
     }
 
-    function showExcelPreview(fileName, data, headers, headerRowIdx) {
+    function showExcelPreview(fileName, data, headers, headerRowIdx, isDoubleHeader) {
       document.getElementById('excel-preview-section').classList.remove('hidden');
       document.getElementById('preview-file-name').innerText = fileName;
-      document.getElementById('preview-row-count').innerText = `共 ${data.length} 筆資料 (偵測第 ${headerRowIdx + 1} 列為表頭)`;
+      const headerText = isDoubleHeader ? `偵測第 ${headerRowIdx + 1} ~ ${headerRowIdx + 2} 列為複合雙列表頭` : `偵測第 ${headerRowIdx + 1} 列為表頭`;
+      document.getElementById('preview-row-count').innerText = `共 ${data.length} 筆專櫃資料 (${headerText})`;
 
       const thead = document.getElementById('preview-thead');
       thead.innerHTML = `<tr>${headers.map(h => `<th class="p-2.5 whitespace-nowrap">${h}</th>`).join('')}</tr>`;
