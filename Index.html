@@ -383,9 +383,8 @@
             <tbody id="ocr-table-tbody" class="divide-y divide-[#36458d]/50 text-white font-medium"></tbody>
           </table>
         </div>
-        <div id="ocr-anomaly-container" class="hidden mt-2 p-2 rounded-lg bg-[#161e46] border border-amber-400/40 text-[11px]">
-          <div class="flex items-center gap-1 font-bold text-amber-300 mb-1"><i data-lucide="alert-circle" class="w-3.5 h-3.5"></i><span>租售比特殊異常提醒 (未抽成 或 &gt;80%)</span></div>
-          <div class="flex flex-wrap gap-1.5" id="ocr-anomaly-badges"></div>
+        <div id="ocr-anomaly-container" class="hidden mt-2.5 p-2.5 rounded-xl bg-[#161e46] border border-amber-400/40 text-[11px] space-y-2">
+          <div id="ocr-anomaly-badges"></div>
         </div>
       </div>
     </section>
@@ -1063,23 +1062,68 @@
     }
 
     function renderOcrHealthChart(rows) {
-      // 正常計算：銷貨 > 0 且 OCR 介於 0% ~ 80%
-      const normal = rows.filter(r => r.currentRecord.salesNet > 0 && r.ocr > 0 && r.ocr <= 0.80).sort((a,b) => b.ocr - a.ocr);
-      // 異常包含：銷貨 <= 0，或 OCR <= 0，或 OCR > 80%
-      const anomaly = rows.filter(r => r.currentRecord.salesNet <= 0 || r.ocr <= 0 || r.ocr > 0.80);
+      // 正常計算：在櫃專櫃，且銷貨 > 0 且 OCR 介於 0% ~ 80%
+      const normal = rows.filter(r => r.daysToExpiry >= 0 && r.currentRecord.salesNet > 0 && r.ocr > 0 && r.ocr <= 0.80).sort((a,b) => b.ocr - a.ocr);
+      
+      // 1. 在櫃營運異常（真正在櫃中營運異常，需重點關切）：銷貨 <= 0 或 無收益 或 OCR > 80%
+      const activeAnomaly = rows.filter(r => r.daysToExpiry >= 0 && (r.currentRecord.salesNet <= 0 || r.ocr <= 0 || r.ocr > 0.80));
+      
+      // 2. 已撤櫃專櫃（退場自然無銷貨/異常，明確標註區隔）：daysToExpiry < 0
+      const expiredAnomaly = rows.filter(r => r.daysToExpiry < 0 && (r.currentRecord.salesNet <= 0 || r.ocr <= 0 || r.ocr > 0.80));
 
       const anomalyContainer = document.getElementById("ocr-anomaly-container");
       const anomalyBadges = document.getElementById("ocr-anomaly-badges");
       if (anomalyContainer && anomalyBadges) {
-        if (anomaly.length > 0) {
+        if (activeAnomaly.length > 0 || expiredAnomaly.length > 0) {
           anomalyContainer.classList.remove("hidden");
-          anomalyBadges.innerHTML = anomaly.map(r => {
-            let labelText = '>80%';
-            if (r.currentRecord.salesNet < 0) labelText = '負銷貨';
-            else if (r.currentRecord.salesNet === 0) labelText = '銷貨為0';
-            else if (r.ocr <= 0) labelText = '無收益/0%';
-            return `<span class="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/40 cursor-pointer" onclick='window.openDrawerByKey("${encodeURIComponent(r.keyId)}")'>${r.displayName} (${labelText})</span>`;
-          }).join('');
+
+          let html = '';
+
+          // A. 若有在櫃營運異常：以鮮明紅玫瑰警示
+          if (activeAnomaly.length > 0) {
+            html += `
+              <div class="space-y-1">
+                <div class="flex items-center gap-1 font-bold text-rose-300 text-[11px]">
+                  <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-rose-400"></i>
+                  <span>在櫃營運異常需追蹤 (${activeAnomaly.length} 家)：</span>
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                  ${activeAnomaly.map(r => {
+                    let labelText = '>80%';
+                    if (r.currentRecord.salesNet < 0) labelText = '負銷貨';
+                    else if (r.currentRecord.salesNet === 0) labelText = '在櫃銷貨為0';
+                    else if (r.ocr <= 0) labelText = '無收益';
+                    return `<span class="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-200 border border-rose-400/50 cursor-pointer hover:bg-rose-500/30 transition flex items-center gap-1 font-medium text-[11px]" onclick='window.openDrawerByKey("${encodeURIComponent(r.keyId)}")'><span class="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse"></span>${r.displayName} (${labelText})</span>`;
+                  }).join('')}
+                </div>
+              </div>
+            `;
+          }
+
+          // B. 若有已撤櫃專櫃：明確提示為【已撤櫃/自然無營收】，並給予深色石板專屬識別徽章
+          if (expiredAnomaly.length > 0) {
+            html += `
+              <div class="${activeAnomaly.length > 0 ? 'pt-2 border-t border-[#36458d]/70' : ''} space-y-1">
+                <div class="flex items-center gap-1 font-bold text-slate-300 text-[11px]">
+                  <i data-lucide="archive" class="w-3.5 h-3.5 text-cyan-300"></i>
+                  <span class="text-[#CADCFC]">已撤櫃專櫃 (${expiredAnomaly.length} 家，退場自然無銷貨/租售比，非在櫃風險)：</span>
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                  ${expiredAnomaly.map(r => {
+                    const daysAgo = Math.abs(r.daysToExpiry);
+                    return `<span class="px-2 py-0.5 rounded-full bg-slate-800/95 text-slate-300 border border-slate-600 hover:border-cyan-400 cursor-pointer hover:text-white transition flex items-center gap-1 text-[11px]" onclick='window.openDrawerByKey("${encodeURIComponent(r.keyId)}")'><span class="px-1.5 py-0.2 bg-slate-700 text-cyan-300 rounded text-[10px] font-bold">已撤${daysAgo}天</span>${r.displayName}</span>`;
+                  }).join('')}
+                </div>
+              </div>
+            `;
+          }
+
+          anomalyBadges.innerHTML = html;
+          // 動態切換容器外框顏色：有在櫃異常時顯著警示，僅有已撤櫃時維持中性藍灰框
+          anomalyContainer.className = activeAnomaly.length > 0
+            ? "mt-2.5 p-2.5 rounded-xl bg-[#161e46] border border-rose-500/50 text-[11px] space-y-2 shadow-lg"
+            : "mt-2.5 p-2.5 rounded-xl bg-[#161e46] border border-[#36458d] text-[11px] space-y-2 shadow-md";
+          lucide.createIcons();
         } else {
           anomalyContainer.classList.add("hidden");
         }
