@@ -548,9 +548,9 @@ function gasGetPendingRequests(adminToken) {
 }
 
 /**
- * 管理員核可申請：自動配發預設密碼 "000000"，並強制首次登入改密碼
+ * 管理員核可申請：自動配發預設密碼 "000000"，指定身份 (admin/viewer)，並強制首次登入改密碼
  */
-function gasApproveUser(adminToken, targetEmpId) {
+function gasApproveUser(adminToken, targetEmpId, targetRole) {
   var auth = validateToken(adminToken);
   if (!auth.valid || auth.role !== 'admin') {
     return { success: false, message: '權限不足' };
@@ -558,12 +558,14 @@ function gasApproveUser(adminToken, targetEmpId) {
 
   try {
     var cleanTarget = normalizeEmpId(targetEmpId);
+    var assignedRole = (String(targetRole).toLowerCase() === 'admin') ? 'admin' : 'viewer';
     var ss = getSpreadsheet();
     var sheet = ss.getSheetByName(USER_TAB_NAME);
     var data = sheet.getDataRange().getValues();
     var headers = data[0].map(function(h) { return String(h).trim(); });
 
     var empCol = headers.indexOf('emp_id');
+    var roleCol = headers.indexOf('role');
     var statusCol = headers.indexOf('status');
     var hashCol = headers.indexOf('pwd_hash');
     var saltCol = headers.indexOf('pwd_salt');
@@ -581,6 +583,9 @@ function gasApproveUser(adminToken, targetEmpId) {
         var nowStr = Utilities.formatDate(new Date(), 'GMT+8', 'yyyy-MM-dd HH:mm:ss');
 
         sheet.getRange(rowIdx, statusCol + 1).setValue('approved');
+        if (roleCol !== -1) {
+          sheet.getRange(rowIdx, roleCol + 1).setValue(assignedRole);
+        }
         sheet.getRange(rowIdx, saltCol + 1).setValue(salt);
         sheet.getRange(rowIdx, hashCol + 1).setValue(defaultHash);
         sheet.getRange(rowIdx, forceCol + 1).setValue(true); // 首次強制改密碼
@@ -589,10 +594,12 @@ function gasApproveUser(adminToken, targetEmpId) {
         sheet.getRange(rowIdx, reviewTimeCol + 1).setValue(nowStr);
         sheet.getRange(rowIdx, reviewerCol + 1).setValue(auth.empId);
 
+        var roleLabel = (assignedRole === 'admin') ? '管理人員 (Admin)' : '一般人員 (Viewer)';
         return { 
           success: true, 
           defaultPwd: '000000',
-          message: '工號 [' + cleanTarget + '] 已核可！預設密碼為 000000，登入後將強制修改密碼。' 
+          role: assignedRole,
+          message: '工號 [' + cleanTarget + '] 已核可（身份：' + roleLabel + '）！預設密碼為 000000，登入後將強制修改密碼。' 
         };
       }
     }
@@ -837,18 +844,22 @@ function upsertMonthlyData(adminToken, rows) {
     var idColIdx = headers.indexOf(idColName);
     var ymColIdx = headers.indexOf(ymColName);
 
-    // 建立現有資料的複合鍵索引 Map (key -> 1-indexed row number)
+    // 建立現有資料的複合鍵索引 Map (key -> { rowNum: r + 1, dataRowIndex: r })
     var keyMap = {};
     for (var r = 1; r < sheetData.length; r++) {
       var rowId = normalizeId(sheetData[r][idColIdx]);
       var rowYm = normalizeYm(sheetData[r][ymColIdx]);
       if (rowId && rowYm) {
-        keyMap[rowId + '_' + rowYm] = r + 1;
+        keyMap[rowId + '_' + rowYm] = {
+          rowNum: r + 1,
+          dataRowIndex: r
+        };
       }
     }
 
     var updatedCount = 0;
     var insertedCount = 0;
+    var skippedCount = 0;
     var newRowsToAppend = [];
 
     for (var i = 0; i < rows.length; i++) {
@@ -867,17 +878,39 @@ function upsertMonthlyData(adminToken, rows) {
       var compositeKey = inputId + '_' + inputYm;
 
       if (keyMap[compositeKey]) {
-        // 更新既有列
-        var targetRowIdx = keyMap[compositeKey];
+        // 既有資料：比對各欄位，判斷是否有變動
+        var existingInfo = keyMap[compositeKey];
+        var targetRowIdx = existingInfo.rowNum;
+        var existingDataRow = (existingInfo.dataRowIndex >= 0) ? sheetData[existingInfo.dataRowIndex] : null;
+        var hasDiff = false;
+        var updatedRowValues = [];
+
         for (var col = 0; col < headers.length; col++) {
           var hName = headers[col];
-          // 在 item 裡尋找匹配的值
-          var val = findValueInObject(item, hName);
-          if (val !== undefined && val !== null) {
-            sheet.getRange(targetRowIdx, col + 1).setValue(val);
+          var existingVal = existingDataRow ? existingDataRow[col] : '';
+          var newVal = findValueInObject(item, hName);
+          
+          if (newVal === undefined || newVal === null) {
+            updatedRowValues.push(existingVal);
+          } else {
+            updatedRowValues.push(newVal);
+            if (!isValueEqual(existingVal, newVal)) {
+              hasDiff = true;
+            }
           }
         }
-        updatedCount++;
+
+        if (hasDiff) {
+          // 有實質差異才執行覆蓋更新，並整列一次寫入以大幅提高執行速度
+          sheet.getRange(targetRowIdx, 1, 1, headers.length).setValues([updatedRowValues]);
+          if (existingDataRow) {
+            sheetData[existingInfo.dataRowIndex] = updatedRowValues;
+          }
+          updatedCount++;
+        } else {
+          // 數值完全一致：識別為重複資料，略過不寫入
+          skippedCount++;
+        }
       } else {
         // 新增列
         var newRowArr = [];
@@ -888,8 +921,11 @@ function upsertMonthlyData(adminToken, rows) {
         }
         newRowsToAppend.push(newRowArr);
         insertedCount++;
-        // 更新記憶體中的 keyMap 避免重複新增同批中的同一筆
-        keyMap[compositeKey] = sheetData.length + newRowsToAppend.length;
+        // 更新記憶體中的 keyMap 避免同批次重複新增同一鍵值
+        keyMap[compositeKey] = {
+          rowNum: sheetData.length + newRowsToAppend.length,
+          dataRowIndex: -1
+        };
       }
     }
 
@@ -898,16 +934,56 @@ function upsertMonthlyData(adminToken, rows) {
       sheet.getRange(sheet.getLastRow() + 1, 1, newRowsToAppend.length, headers.length).setValues(newRowsToAppend);
     }
 
+    var resultMsg = '';
+    if (insertedCount === 0 && updatedCount === 0 && skippedCount > 0) {
+      resultMsg = '上傳資料皆已存在且內容完全一致！共自動識別並略過 ' + skippedCount + ' 筆重複資料，未進行重複寫入。';
+    } else {
+      resultMsg = '月結資料處理完成！新增 ' + insertedCount + ' 筆，覆蓋更新 ' + updatedCount + ' 筆，略過重複且無異動 ' + skippedCount + ' 筆。';
+    }
+
     return {
       success: true,
       updatedCount: updatedCount,
       insertedCount: insertedCount,
-      message: '月結資料更新成功！共更新 ' + updatedCount + ' 筆，新增 ' + insertedCount + ' 筆。'
+      skippedCount: skippedCount,
+      message: resultMsg
     };
 
   } catch (err) {
     return { success: false, message: '月結資料 Upsert 失敗: ' + err.message };
   }
+}
+
+/**
+ * 輔助函式：判斷試算表舊值與 Excel 新值是否實質相等（容錯空白、型別與浮點數精度）
+ */
+function isValueEqual(v1, v2) {
+  if (v1 === v2) return true;
+  if ((v1 === null || v1 === undefined || String(v1).trim() === '') && 
+      (v2 === null || v2 === undefined || String(v2).trim() === '')) {
+    return true;
+  }
+  
+  // 日期比對處理 (Google Sheets 讀出的 Date 物件 vs 字串)
+  if (v1 instanceof Date || Object.prototype.toString.call(v1) === '[object Date]') {
+    var d1Str = Utilities.formatDate(v1, 'GMT+8', 'yyyy-MM-dd');
+    var s2 = String(v2).trim().replace(/\//g, '-');
+    if (d1Str === s2) return true;
+    var ym1 = Utilities.formatDate(v1, 'GMT+8', 'yyyyMM');
+    if (normalizeYm(v2) === ym1) return true;
+  }
+
+  // 數值比對處理 (如 50000 與 "50000" 或 "50,000")
+  var cleanS1 = String(v1).replace(/,/g, '').trim();
+  var cleanS2 = String(v2).replace(/,/g, '').trim();
+  var n1 = Number(cleanS1);
+  var n2 = Number(cleanS2);
+  if (!isNaN(n1) && !isNaN(n2) && cleanS1 !== '' && cleanS2 !== '') {
+    return Math.abs(n1 - n2) < 0.0001;
+  }
+
+  // 預設字串純文字比對
+  return cleanS1 === cleanS2;
 }
 
 /**
