@@ -126,6 +126,26 @@
 </head>
 <body class="min-h-screen flex flex-col antialiased selection:bg-blue-500 selection:text-white pb-12">
 
+  <!-- 全螢幕待機連線畫面 (Loading Overlay) -->
+  <div id="app-loading-screen" class="fixed inset-0 bg-[#1a224a] z-50 flex flex-col items-center justify-center space-y-4 transition-opacity duration-300">
+    <div class="w-16 h-16 rounded-2xl bg-[#1E2761] border border-[#36458d] flex items-center justify-center text-[#CADCFC] shadow-2xl">
+      <svg class="animate-spin w-8 h-8 text-[#4d7cfe]" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+    </div>
+    <div class="text-center space-y-1">
+      <h2 class="text-base font-bold text-white tracking-wide" id="loading-title">正在安全連線雲端資料庫...</h2>
+      <p class="text-xs text-[#CADCFC]/80 font-medium" id="loading-desc">即時載入專櫃合約主檔與月結營運數據，請稍候</p>
+    </div>
+    <div id="loading-error-box" class="hidden flex flex-col items-center space-y-2 pt-2">
+      <p class="text-xs text-rose-400 font-semibold" id="loading-error-msg"></p>
+      <button type="button" onclick="triggerRealSync()" class="px-4 py-1.5 bg-[#4d7cfe] hover:bg-blue-600 text-white text-xs font-bold rounded-xl shadow">
+        重新嘗試連線
+      </button>
+    </div>
+  </div>
+
   <!-- Header -->
   <header class="bg-[#1E2761] border-b border-[#CADCFC]/30 px-3 py-2.5 sticky top-0 z-40 shadow-xl">
     <div class="max-w-7xl mx-auto flex items-center justify-between gap-2">
@@ -163,8 +183,8 @@
         </button>
 
         <div class="hidden md:flex items-center gap-1.5 bg-[#161e46] px-2.5 py-1 rounded-lg border border-[#36458d]">
-          <span class="w-2 h-2 rounded-full bg-cyan-400" id="sync-status-dot"></span>
-          <span class="text-[11px] font-semibold text-[#CADCFC]" id="sync-status-text">展示模式</span>
+          <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" id="sync-status-dot"></span>
+          <span class="text-[11px] font-semibold text-[#CADCFC]" id="sync-status-text">連線同步中...</span>
         </div>
 
         <button id="btn-sync" type="button" onclick="event.preventDefault(); event.stopPropagation(); window.triggerSync(event); return false;" title="重新同步資料" class="icon-action-btn bg-[#4d7cfe] hover:bg-blue-600 text-white shadow">
@@ -575,35 +595,19 @@
 
   <!-- Main Application Logic Script -->
   <script>
-    const DEFAULT_STORE_MASTER = [
-      { id: "00008", name: "示範品牌_風格女裝", company: "示範國際服飾", floor: "1F", category: "流行服裝", subCategory: "女裝", area: 15.0, start: "2024-01-01", end: "2025-12-31", type: "一般抽成", rate: 0.12, rateText: "12%", minGuarantee: 0 },
-      { id: "00002", name: "示範品牌_義式輕食", company: "示範餐飲集團", floor: "1F", category: "美饌餐飲", subCategory: "輕食咖啡", area: 25.0, start: "2024-01-01", end: "2025-06-30", type: "包底抽成", rate: 0.10, rateText: "10%", minGuarantee: 25000 },
-      { id: "00003", name: "示範品牌_戶外登山", company: "示範運動休閒", floor: "2F", category: "休閒運動", subCategory: "戶外用品", area: 32.0, start: "2023-07-01", end: "2025-08-31", type: "包底+一般", rate: 0.15, rateText: "15%", minGuarantee: 30000 },
-      { id: "00004", name: "示範品牌_生活美學", company: "示範文創工坊", floor: "2F", category: "生活雜貨", subCategory: "居家飾品", area: 18.0, start: "2024-03-01", end: "2025-04-30", type: "一般抽成", rate: 0.16, rateText: "16%", minGuarantee: 0 }
-    ];
-    const DEFAULT_MONTHLY_RAW = [
-      { id: "00008", name: "示範品牌_風格女裝", period: "202401", salesNet: 180000, salesTax: 9000, commTotal: 22680, deductTotal: 15000, minShortage: 0, payable: 151320 },
-      { id: "00002", name: "示範品牌_義式輕食", period: "202401", salesNet: 220000, salesTax: 11000, commTotal: 23100, deductTotal: 20000, minShortage: 1900, payable: 186000 },
-      { id: "00003", name: "示範品牌_戶外登山", period: "202401", salesNet: 310000, salesTax: 15500, commTotal: 48825, deductTotal: 25000, minShortage: 0, payable: 251675 },
-      { id: "00004", name: "示範品牌_生活美學", period: "202401", salesNet: 140000, salesTax: 7000, commTotal: 23520, deductTotal: 12000, minShortage: 0, payable: 111480 },
-      { id: "00008", name: "示範品牌_風格女裝", period: "202501", salesNet: 195000, salesTax: 9750, commTotal: 24570, deductTotal: 16000, minShortage: 0, payable: 164180 },
-      { id: "00002", name: "示範品牌_義式輕食", period: "202501", salesNet: 240000, salesTax: 12000, commTotal: 25200, deductTotal: 21000, minShortage: 0, payable: 205800 },
-      { id: "00003", name: "示範品牌_戶外登山", period: "202501", salesNet: 290000, salesTax: 14500, commTotal: 45675, deductTotal: 26000, minShortage: 0, payable: 232825 },
-      { id: "00004", name: "示範品牌_生活美學", period: "202501", salesNet: 135000, salesTax: 6750, commTotal: 22680, deductTotal: 12500, minShortage: 2320, payable: 107500 }
-    ];
+    const DEFAULT_STORE_MASTER = [];
+    const DEFAULT_MONTHLY_RAW = [];
 
     let currentViewMode = 'STORE';
     let currentRangePreset = 'LATEST_1M';
-    let selectedStartPeriod = '202501';
-    let selectedEndPeriod = '202501';
+    let selectedStartPeriod = '';
+    let selectedEndPeriod = '';
     let currentTrendRange = '1Y';
 
-    let secretClickCount = 0;
-    let lastSecretClickTime = 0;
-    let currentBenchmarkDate = new Date("2025-01-01T00:00:00");
+    let currentBenchmarkDate = new Date();
 
-    let activeStoreMaster = [...DEFAULT_STORE_MASTER];
-    let activeMonthlyRaw = [...DEFAULT_MONTHLY_RAW];
+    let activeStoreMaster = [];
+    let activeMonthlyRaw = [];
     let chartInstances = {};
     let moduleViews = { rank: 'chart', ocr: 'table', 'top-sales': 'table', 'top-rev': 'table', trend: 'chart' };
 
@@ -695,38 +699,13 @@
       return Math.ceil((target - compareDate) / (1000 * 60 * 60 * 24));
     }
 
-    // In-memory safe reset for GAS iframe environment
+    // 點擊重新同步直接觸發雲端資料庫真實讀取
     window.triggerSync = function(e) {
       if (e && e.preventDefault) {
         e.preventDefault();
         e.stopPropagation();
       }
-      try {
-        activeStoreMaster = [...DEFAULT_STORE_MASTER];
-        activeMonthlyRaw = [...DEFAULT_MONTHLY_RAW];
-        currentBenchmarkDate = new Date("2025-01-01T00:00:00");
-        currentViewMode = 'STORE';
-
-        const searchInput = document.getElementById("filter-search");
-        if (searchInput) searchInput.value = "";
-
-        const btnStore = document.getElementById("view-mode-store");
-        const btnVendor = document.getElementById("view-mode-vendor");
-        if (btnStore) btnStore.className = "flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-bold transition shadow bg-[#4d7cfe] text-white";
-        if (btnVendor) btnVendor.className = "flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-bold transition text-[#CADCFC] hover:text-white";
-
-        const statusText = document.getElementById("sync-status-text");
-        const statusDot = document.getElementById("sync-status-dot");
-        if (statusText) statusText.innerText = "展示模式 (2025/01/01)";
-        if (statusDot) statusDot.className = "w-2 h-2 rounded-full bg-cyan-400";
-
-        rebuildMonthlyIndices();
-        initFilters();
-        window.applyRangePreset('LATEST_1M');
-        showToast("已重設回展示模式");
-      } catch (err) {
-        console.error("Reset in-memory error:", err);
-      }
+      triggerRealSync();
       return false;
     };
 
@@ -1451,9 +1430,42 @@
 
       document.getElementById("sync-status-text").innerText = `正式模式 (${displayPeriodText})`;
       document.getElementById("sync-status-dot").className = "w-2 h-2 rounded-full bg-emerald-400";
+      hideLoadingScreen();
+    }
+
+    function showLoadingScreen(title, desc) {
+      const el = document.getElementById('app-loading-screen');
+      if (!el) return;
+      el.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+      if (title) document.getElementById('loading-title').innerText = title;
+      if (desc) document.getElementById('loading-desc').innerText = desc;
+      const errBox = document.getElementById('loading-error-box');
+      if (errBox) errBox.classList.add('hidden');
+    }
+
+    function hideLoadingScreen() {
+      const el = document.getElementById('app-loading-screen');
+      if (!el) return;
+      el.classList.add('opacity-0', 'pointer-events-none');
+      setTimeout(() => el.classList.add('hidden'), 350);
+    }
+
+    function showLoadingError(errMsg) {
+      const el = document.getElementById('app-loading-screen');
+      if (!el) return;
+      el.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+      document.getElementById('loading-title').innerText = '資料庫連線中斷';
+      document.getElementById('loading-desc').innerText = '無法自 Google 試算表讀取真實數據，請確認後端設定或點擊重新嘗試。';
+      const errBox = document.getElementById('loading-error-box');
+      if (errBox) {
+        document.getElementById('loading-error-msg').innerText = errMsg;
+        errBox.classList.remove('hidden');
+      }
     }
 
     async function triggerRealSync() {
+      showLoadingScreen("正在連線雲端資料庫...", "即時載入專櫃合約主檔與月結數據，請稍候");
+
       // 1. 若運行於 Google Apps Script Web App 環境，優先採用後端安全代理 (100% 試算表 ID 零外洩)
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         showToast("正透過 GAS 後端安全讀取試算表...", "info");
@@ -1463,11 +1475,11 @@
               populateDataFromRows(res.masterRows, res.rawRows);
               showToast(res.userEmail ? ("同步成功！主管: " + res.userEmail) : "試算表資料同步成功！");
             } else {
-              showToast("同步失敗: 資料格式異常", "alert");
+              showLoadingError(res ? res.error || "資料格式異常" : "回傳資料為空");
             }
           })
           .withFailureHandler(function(err) {
-            showToast("後端讀取失敗: " + (err.message || err), "alert");
+            showLoadingError(err.message || String(err));
           })
           .apiGetSyncData();
         return;
@@ -1480,7 +1492,7 @@
       const rawTab = localStorage.getItem("g_sheet_raw_tab") || localCfg.RAW_TAB || "Monthly_Settlement_Raw";
 
       if (!customSheetId) {
-        showToast("提示：目前未指定試算表 ID，請於設定視窗中輸入或配置 config.local.js", "alert");
+        showLoadingError("地端測試提示：目前未指定試算表 ID，請於 config.local.js 配置 SPREADSHEET_ID");
         return;
       }
 
@@ -1491,10 +1503,10 @@
           populateDataFromRows(mRows, rRows);
           showToast(`試算表同步成功！已載入 ${mRows.length} 個專櫃、${rRows.length} 筆月結紀錄`);
         } else {
-          showToast("同步完成但無專櫃資料，請確認分頁名稱是否相符", "alert");
+          showLoadingError("同步完成但無專櫃資料，請確認分頁名稱是否相符");
         }
       } catch (err) {
-        showToast("同步失敗: " + err.message, "alert");
+        showLoadingError(err.message || String(err));
       }
     }
 
@@ -1718,9 +1730,7 @@
     window.onload = function() {
       lucide.createIcons();
       checkDashboardAuth();
-      rebuildMonthlyIndices();
-      initFilters();
-      window.applyRangePreset('LATEST_1M');
+      triggerRealSync();
     };
   </script>
 </body>

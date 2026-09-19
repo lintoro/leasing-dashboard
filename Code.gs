@@ -315,7 +315,7 @@ function gasLogin(empId, password) {
       Utilities.formatDate(expiresAt, 'GMT+8', 'yyyy-MM-dd HH:mm:ss')
     ]);
 
-    var mustChangePwd = user.force_change_pwd === true || String(user.force_change_pwd).toUpperCase() === 'TRUE';
+    var mustChangePwd = (cleanPwd === '000000') || user.force_change_pwd === true || String(user.force_change_pwd).toUpperCase() === 'TRUE';
 
     return {
       success: true,
