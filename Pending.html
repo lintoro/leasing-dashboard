@@ -89,7 +89,12 @@
     function navigateTo(page) {
       if (window.google && google.script && google.script.run) {
         google.script.run.withSuccessHandler(function(url) {
-          window.location.href = url + '?page=' + page;
+          const targetUrl = url + '?page=' + page;
+          if (window.top) {
+            window.top.location.href = targetUrl;
+          } else {
+            window.location.href = targetUrl;
+          }
         }).getScriptUrl();
       } else {
         const urlParams = new URLSearchParams(window.location.search);

@@ -17,7 +17,7 @@
 
 function doGet(e) {
   try {
-    var page = (e && e.parameter && e.parameter.page) ? String(e.parameter.page).toLowerCase() : 'dashboard';
+    var page = (e && e.parameter && e.parameter.page) ? String(e.parameter.page).toLowerCase() : 'login';
     
     // 初始化確保資料庫分頁齊全
     ensureAuthSheetsExist();
