@@ -123,7 +123,8 @@
 ```
 C:\Github\ReactApp\leasing-dashboard\
 ├── Index.html                  # 【前端核心】戰情室單頁應用程式（包含 UI、圖表、所有計算引擎與抽屜）
-├── Code.gs                     # 【GAS 後端微服務】提供 doGet、doPost、apiGetSyncData 與屬性管理
+├── Admin.html                  # 【管理後台】月結資料上傳匯入器（支援 21 欄位智慧映射、Upsert 覆蓋防重複）
+├── Code.gs                     # 【GAS 後端微服務】提供 doGet、doPost、apiGetSyncData、upsertMonthlyData 與屬性管理
 ├── appsscript.json             # 【GAS 專案設定檔】時區 (Asia/Taipei)、例外處理與 Web App 配置
 ├── config.local.js             # 【本機私有設定】(已被 .gitignore 排除) 存放地端 SPREADSHEET_ID
 ├── config.local.example.js     # 【本機私有設定範本】供新環境或交接參考
