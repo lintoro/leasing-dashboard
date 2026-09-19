@@ -1355,23 +1355,70 @@
 
       showToast("正在從 Google 試算表同步真實資料...", "info");
       try {
-        const [mRows, rRows] = await Promise.all([fetchSheetTabAsCSV(customSheetId, masterTab), fetchSheetTabAsCSV(customSheetId, rawTab)]);
+        const [mRows, rRows] = await Promise.all([fetchSheetTabGViz(customSheetId, masterTab), fetchSheetTabGViz(customSheetId, rawTab)]);
         if (mRows.length > 0 && rRows.length > 0) {
           populateDataFromRows(mRows, rRows);
           showToast(`試算表同步成功！已載入 ${mRows.length} 個專櫃、${rRows.length} 筆月結紀錄`);
         } else {
-          showToast("同步完成但無專櫃資料，請確認分頁名稱", "alert");
+          showToast("同步完成但無專櫃資料，請確認分頁名稱是否相符", "alert");
         }
       } catch (err) {
         showToast("同步失敗: " + err.message, "alert");
       }
     }
 
-    async function fetchSheetTabAsCSV(sheetId, tabName) {
-      const res = await fetch(`https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}&t=${Date.now()}`);
-      if (!res.ok) throw new Error("無法載入分頁");
-      const text = await res.text();
-      return new Promise((resolve) => Papa.parse(text, { header: true, skipEmptyLines: true, complete: r => resolve(r.data) }));
+    // 利用 Google Visualization API 原生 JSONP 機制實現 100% 跨域讀取，徹底免除瀏覽器 CORS 與 file:// 協定限制
+    function fetchSheetTabGViz(sheetId, tabName) {
+      return new Promise((resolve, reject) => {
+        const callbackName = 'gviz_cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+        const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?sheet=${encodeURIComponent(tabName)}&tqx=responseHandler:${callbackName}&t=${Date.now()}`;
+        
+        let timer = setTimeout(() => {
+          cleanup();
+          reject(new Error(`讀取分頁 [${tabName}] 逾時，請確認試算表分享權限設為「知道連結的使用者」`));
+        }, 15000);
+
+        function cleanup() {
+          if (timer) clearTimeout(timer);
+          delete window[callbackName];
+          const el = document.getElementById(callbackName);
+          if (el && el.parentNode) el.parentNode.removeChild(el);
+        }
+
+        window[callbackName] = function(resp) {
+          cleanup();
+          if (!resp || !resp.table) {
+            reject(new Error(resp && resp.errors ? resp.errors[0]?.message : "資料格式無效"));
+            return;
+          }
+          const table = resp.table;
+          const headers = table.cols.map(c => (c.label || c.id || "").trim());
+          const rows = table.rows.map(r => {
+            const item = {};
+            for (let i = 0; i < headers.length; i++) {
+              const cell = r.c ? r.c[i] : null;
+              if (!cell) {
+                item[headers[i]] = "";
+              } else if (cell.f !== undefined && cell.f !== null) {
+                item[headers[i]] = typeof cell.v === 'string' && cell.v.startsWith('Date(') ? cell.f : (cell.v !== null && cell.v !== undefined ? cell.v : cell.f);
+              } else {
+                item[headers[i]] = cell.v !== null && cell.v !== undefined ? cell.v : "";
+              }
+            }
+            return item;
+          });
+          resolve(rows);
+        };
+
+        const script = document.createElement('script');
+        script.id = callbackName;
+        script.src = url;
+        script.onerror = function() {
+          cleanup();
+          reject(new Error(`無法載入分頁 [${tabName}]，請確認試算表共用權限或分頁名稱`));
+        };
+        document.head.appendChild(script);
+      });
     }
 
     window.saveAndSyncSheet = function() {
