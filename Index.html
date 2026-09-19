@@ -182,19 +182,7 @@
           <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
         </button>
 
-        <div class="hidden md:flex items-center gap-1.5 bg-[#161e46] px-2.5 py-1 rounded-lg border border-[#36458d]">
-          <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" id="sync-status-dot"></span>
-          <span class="text-[11px] font-semibold text-[#CADCFC]" id="sync-status-text">連線同步中...</span>
-        </div>
 
-        <button id="btn-sync" type="button" onclick="event.preventDefault(); event.stopPropagation(); window.triggerSync(event); return false;" title="重新同步資料" class="icon-action-btn bg-[#4d7cfe] hover:bg-blue-600 text-white shadow">
-          <i data-lucide="refresh-cw" class="w-4 h-4" id="sync-icon"></i>
-        </button>
-
-        <label title="匯入 CSV 檔案" class="icon-action-btn bg-[#161e46] hover:bg-[#36458d] text-[#CADCFC] border border-[#36458d] shadow cursor-pointer">
-          <i data-lucide="upload" class="w-4 h-4 text-cyan-300"></i>
-          <input type="file" id="csv-file-input" accept=".csv" multiple onchange="window.handleCSVUpload(event)" class="hidden">
-        </label>
       </div>
     </div>
   </header>
@@ -1428,8 +1416,10 @@
       const latestP = periods[periods.length - 1];
       const displayPeriodText = latestP ? `${latestP.substring(0,4)}/${latestP.substring(4,6)}` : '即時';
 
-      document.getElementById("sync-status-text").innerText = `正式模式 (${displayPeriodText})`;
-      document.getElementById("sync-status-dot").className = "w-2 h-2 rounded-full bg-emerald-400";
+      const sText = document.getElementById("sync-status-text");
+      const sDot = document.getElementById("sync-status-dot");
+      if (sText) sText.innerText = `正式模式 (${displayPeriodText})`;
+      if (sDot) sDot.className = "w-2 h-2 rounded-full bg-emerald-400";
       hideLoadingScreen();
     }
 

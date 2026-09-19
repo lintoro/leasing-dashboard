@@ -569,12 +569,15 @@
       if (window.google && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(res) {
-            if (res.success) {
+            if (res && res.success) {
               pendingUsersCache = res.requests || [];
               renderPendingTable(pendingUsersCache);
             } else {
-              tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-rose-400">${res.message}</td></tr>`;
+              tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-rose-400">${res ? res.message : '後端回傳異常'}</td></tr>`;
             }
+          })
+          .withFailureHandler(function(err) {
+            tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-rose-400">連線異常: ${err.message || String(err)}</td></tr>`;
           })
           .gasGetPendingRequests(token);
       } else {
@@ -668,10 +671,15 @@
       if (window.google && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(res) {
-            if (res.success) {
+            if (res && res.success) {
               allUsersCache = res.users || [];
               renderAllUsersTable(allUsersCache);
+            } else {
+              tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-rose-400">${res ? res.message : '載入名冊失敗'}</td></tr>`;
             }
+          })
+          .withFailureHandler(function(err) {
+            tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-rose-400">連線異常: ${err.message || String(err)}</td></tr>`;
           })
           .gasGetAllUsers(token);
       } else {

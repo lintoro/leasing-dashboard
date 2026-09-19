@@ -525,11 +525,17 @@ function gasGetPendingRequests(adminToken) {
     var list = [];
 
     for (var i = 1; i < data.length; i++) {
-      if (String(data[i][statusCol]).toLowerCase() === 'pending') {
+      var rowStatus = String(data[i][statusCol] || '').trim().toLowerCase();
+      if (rowStatus === 'pending') {
         var item = {};
         for (var c = 0; c < headers.length; c++) {
           if (headers[c] !== 'pwd_hash' && headers[c] !== 'pwd_salt') {
-            item[headers[c]] = data[i][c];
+            var cellVal = data[i][c];
+            if (cellVal instanceof Date) {
+              item[headers[c]] = Utilities.formatDate(cellVal, 'GMT+8', 'yyyy-MM-dd HH:mm:ss');
+            } else {
+              item[headers[c]] = (cellVal === null || cellVal === undefined) ? '' : cellVal;
+            }
           }
         }
         list.push(item);
@@ -537,7 +543,7 @@ function gasGetPendingRequests(adminToken) {
     }
     return { success: true, requests: list };
   } catch (err) {
-    return { success: false, message: err.message };
+    return { success: false, message: '查詢待審核名單失敗: ' + err.message };
   }
 }
 
@@ -741,14 +747,19 @@ function gasGetAllUsers(adminToken) {
       for (var c = 0; c < headers.length; c++) {
         // 資安遮蔽
         if (headers[c] !== 'pwd_hash' && headers[c] !== 'pwd_salt') {
-          item[headers[c]] = data[i][c];
+          var cellVal = data[i][c];
+          if (cellVal instanceof Date) {
+            item[headers[c]] = Utilities.formatDate(cellVal, 'GMT+8', 'yyyy-MM-dd HH:mm:ss');
+          } else {
+            item[headers[c]] = (cellVal === null || cellVal === undefined) ? '' : cellVal;
+          }
         }
       }
       list.push(item);
     }
     return { success: true, users: list };
   } catch (err) {
-    return { success: false, message: err.message };
+    return { success: false, message: '查詢使用者名冊失敗: ' + err.message };
   }
 }
 

@@ -83,10 +83,12 @@
           <button type="button" onclick="togglePasswordVisibility()" class="absolute right-3 top-2.5 text-slate-400 hover:text-white transition">
             <i id="eye-icon" data-lucide="eye" class="w-4 h-4"></i>
           </button>
-        </div>
-        <div class="mt-1.5 flex justify-between items-center text-[11px] text-slate-400">
-          <span>預設初始密碼為 000000</span>
-          <span class="text-slate-400 hover:text-[#CADCFC] cursor-pointer" onclick="showAlert('忘記密碼或帳號鎖定，請直接聯繫系統管理員協助重設解鎖。', 'info')">忘記密碼？</span>
+        <div class="mt-2 flex justify-between items-center text-xs">
+          <label class="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white select-none">
+            <input type="checkbox" id="remember-me" class="w-4 h-4 rounded bg-[#161e46] border border-[#36458d] accent-[#4d7cfe] cursor-pointer">
+            <span class="text-[12px] font-semibold">記住工號</span>
+          </label>
+          <span class="text-slate-400 hover:text-[#CADCFC] cursor-pointer text-[11px]" onclick="showAlert('忘記密碼或帳號鎖定，請直接聯繫系統管理員協助重設解鎖。', 'info')">忘記密碼？</span>
         </div>
       </div>
 
@@ -157,15 +159,34 @@
       }
     }
 
+    window.addEventListener('DOMContentLoaded', function() {
+      const rememberedId = localStorage.getItem('LEASING_REMEMBERED_EMPID');
+      if (rememberedId) {
+        const empInput = document.getElementById('emp-id');
+        const remCheck = document.getElementById('remember-me');
+        if (empInput) empInput.value = rememberedId;
+        if (remCheck) remCheck.checked = true;
+        const pwdInput = document.getElementById('password');
+        if (pwdInput) pwdInput.focus();
+      }
+    });
+
     function handleLogin(e) {
       e.preventDefault();
       const empId = document.getElementById('emp-id').value.trim();
       const password = document.getElementById('password').value.trim();
+      const rememberMe = document.getElementById('remember-me').checked;
       const submitBtn = document.getElementById('submit-btn');
 
       if (!empId || !password) {
         showAlert('請輸入工號與密碼');
         return;
+      }
+
+      if (rememberMe) {
+        localStorage.setItem('LEASING_REMEMBERED_EMPID', empId);
+      } else {
+        localStorage.removeItem('LEASING_REMEMBERED_EMPID');
       }
 
       submitBtn.disabled = true;
