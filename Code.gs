@@ -858,11 +858,16 @@ function upsertMonthlyData(adminToken, rows) {
     return { success: false, message: '無上傳資料' };
   }
 
+  Logger.log('=== upsertMonthlyData 開始 === 共 ' + rows.length + ' 筆資料');
+  Logger.log('=== 第一筆 item keys: ' + JSON.stringify(Object.keys(rows[0] || {})));
+  Logger.log('=== 第一筆 item 值: ' + JSON.stringify(rows[0]));
+
   try {
     var rawTab = getAppProperty('RAW_TAB') || 'Monthly_Settlement_Raw';
     var ss = getSpreadsheet();
     var sheet = ss.getSheetByName(rawTab);
     if (!sheet) {
+      Logger.log('=== 找不到分頁: ' + rawTab);
       return { success: false, message: '找不到月結分頁: ' + rawTab };
     }
 
@@ -872,10 +877,13 @@ function upsertMonthlyData(adminToken, rows) {
     ];
 
     var sheetData = sheet.getDataRange().getValues();
+    Logger.log('=== 試算表 getDataRange 共 ' + sheetData.length + ' 列');
     var hasValidHeaders = (sheetData.length > 0 && sheetData[0] && sheetData[0].some(function(c) { return String(c).trim() !== ''; }));
+    Logger.log('=== hasValidHeaders: ' + hasValidHeaders + '，表頭: ' + JSON.stringify(sheetData[0]));
 
     if (!hasValidHeaders) {
       // 試算表若被清空，自動修復並補建標準表頭
+      Logger.log('=== 試算表無表頭，自動補建標準表頭');
       sheet.clear();
       sheet.appendRow(DEFAULT_MONTHLY_HEADERS);
       sheet.getRange(1, 1, 1, DEFAULT_MONTHLY_HEADERS.length).setFontWeight('bold').setBackground('#1E2761').setFontColor('#CADCFC');
@@ -883,6 +891,7 @@ function upsertMonthlyData(adminToken, rows) {
     }
 
     var headers = sheetData[0].map(function(h) { return String(h).trim(); });
+    Logger.log('=== 試算表 headers: ' + JSON.stringify(headers));
     
     // 找出關鍵欄位索引 (擴大正規比對以相容 結帳年月、期別、月份)
     var idColName = headers.find(function(h) { return /專櫃編號|專櫃代號|Vendor_ID|^ID$/i.test(h); }) || headers[0];
@@ -890,8 +899,9 @@ function upsertMonthlyData(adminToken, rows) {
 
     var idColIdx = headers.indexOf(idColName);
     var ymColIdx = headers.indexOf(ymColName);
+    Logger.log('=== idCol: ' + idColName + '(idx=' + idColIdx + ')，ymCol: ' + ymColName + '(idx=' + ymColIdx + ')');
 
-    // 尋找試算表中真正的最後一筆非空資料列 (避免使用者清除內容後留下的空白列導致寫入跳至末端)
+    // 尋找試算表中真正的最後一筆非空資料列
     var trueLastRow = 1;
     var keyMap = {};
 
@@ -916,42 +926,105 @@ function upsertMonthlyData(adminToken, rows) {
         }
       }
     }
+    Logger.log('=== trueLastRow: ' + trueLastRow + '，keyMap 既有筆數: ' + Object.keys(keyMap).length);
+
+    // 載入專櫃主檔 (Store_Contract_Master)，建立專櫃有效合約期對照表
+    var masterTabName = getAppProperty('MASTER_TAB') || 'Store_Contract_Master';
+    var masterSheet = ss.getSheetByName(masterTabName);
+    var contractMap = {}; // { '00001': [ { startYm: '202401', endYm: '202612' } ] }
+    var hasMasterSheet = false;
+
+    if (masterSheet) {
+      hasMasterSheet = true;
+      var mData = masterSheet.getDataRange().getValues();
+      if (mData.length > 1) {
+        var mHeaders = mData[0].map(function(h) { return String(h).trim(); });
+        var mIdCol = mHeaders.find(function(h) { return /專櫃編號|專櫃代號|Vendor_ID|ID/i.test(h); }) || mHeaders[0];
+        var mStartCol = mHeaders.find(function(h) { return /起始|開始|生效|Start/i.test(h); });
+        var mEndCol = mHeaders.find(function(h) { return /到期|結束|截止|End/i.test(h); });
+
+        var mIdIdx = mHeaders.indexOf(mIdCol);
+        var mStartIdx = mStartCol ? mHeaders.indexOf(mStartCol) : -1;
+        var mEndIdx = mEndCol ? mHeaders.indexOf(mEndCol) : -1;
+
+        for (var mr = 1; mr < mData.length; mr++) {
+          var mStoreId = normalizeId(mData[mr][mIdIdx]);
+          if (!mStoreId) continue;
+
+          var sYm = (mStartIdx >= 0) ? normalizeYm(mData[mr][mStartIdx]) : '';
+          var eYm = (mEndIdx >= 0) ? normalizeYm(mData[mr][mEndIdx]) : '';
+
+          if (!contractMap[mStoreId]) contractMap[mStoreId] = [];
+          contractMap[mStoreId].push({
+            startYm: sYm || '190001',
+            endYm: eYm || '209912'
+          });
+        }
+      }
+    }
+    Logger.log('=== 合約主檔專櫃數: ' + Object.keys(contractMap).length);
 
     var updatedCount = 0;
     var insertedCount = 0;
     var skippedCount = 0;
+    var skippedNoKeyCount = 0;
+    var skippedOutContractCount = 0;
     var newRowsToAppend = [];
 
     for (var i = 0; i < rows.length; i++) {
       var item = rows[i];
-      // 取出輸入項目的 ID 與 YM
       var inputId = '';
       var inputYm = '';
 
+      // 第一輪：依欄位名稱正規比對
       for (var k in item) {
         if (/專櫃編號|專櫃代號|Vendor_ID|^ID$/i.test(k)) inputId = normalizeId(item[k]);
         if (/銷售年月|結帳年月|結算年月|帳期年月|年月|期別|月份|Period|^YM$/i.test(k)) inputYm = normalizeYm(item[k]);
       }
 
-      // 值特徵雙重保險：若欄位名稱未直接對應，以值特徵自動識別
+      // 第二輪：值特徵自動識別備援
       if (!inputId || !inputYm) {
-        for (var k in item) {
-          var valStr = String(item[k] || '').trim();
+        for (var k2 in item) {
+          var valStr = String(item[k2] || '').trim();
           if (!inputYm && (/^202\d{3}$/.test(valStr) || /^202\d[-/](0[1-9]|1[0-2])$/.test(valStr))) {
             inputYm = normalizeYm(valStr);
           }
-          if (!inputId && /^\d{1,5}$/.test(valStr) && !/^202\d{3}$/.test(valStr) && /編號|代號|代碼|專櫃|ID/i.test(k)) {
+          if (!inputId && /^\d{1,5}$/.test(valStr) && !/^202\d{3}$/.test(valStr) && /編號|代號|代碼|專櫃|ID/i.test(k2)) {
             inputId = normalizeId(valStr);
           }
         }
       }
 
-      if (!inputId || !inputYm) continue;
+      if (i === 0) {
+        Logger.log('=== 第0筆 inputId=[' + inputId + '] inputYm=[' + inputYm + ']');
+      }
+
+      if (!inputId || !inputYm) {
+        skippedNoKeyCount++;
+        continue;
+      }
+
+      // 檢查合約主檔：若有專櫃主檔，且該專櫃不存在或上傳年月不在合約期內，則自動排除
+      if (hasMasterSheet && Object.keys(contractMap).length > 0) {
+        var storeContracts = contractMap[inputId];
+        if (!storeContracts || storeContracts.length === 0) {
+          skippedOutContractCount++;
+          continue; // 不在專櫃主檔中
+        }
+
+        var isWithinContract = storeContracts.some(function(c) {
+          return inputYm >= c.startYm && inputYm <= c.endYm;
+        });
+
+        if (!isWithinContract) {
+          skippedOutContractCount++;
+          continue; // 不在有效合約期內
+        }
+      }
 
       var compositeKey = inputId + '_' + inputYm;
 
       if (keyMap[compositeKey]) {
-        // 既有資料：比對各欄位，判斷是否有變動
         var existingInfo = keyMap[compositeKey];
         var targetRowIdx = existingInfo.rowNum;
         var existingDataRow = (existingInfo.dataRowIndex >= 0) ? sheetData[existingInfo.dataRowIndex] : null;
@@ -983,12 +1056,15 @@ function upsertMonthlyData(adminToken, rows) {
           skippedCount++;
         }
       } else {
-        // 新增列
+        // 新增列：依試算表表頭順序組裝
         var newRowArr = [];
         for (var col = 0; col < headers.length; col++) {
           var hName = headers[col];
           var val = findValueInObject(item, hName);
           newRowArr.push(val !== undefined && val !== null ? val : '');
+        }
+        if (i === 0) {
+          Logger.log('=== 第0筆新增列 newRowArr: ' + JSON.stringify(newRowArr));
         }
         newRowsToAppend.push(newRowArr);
         insertedCount++;
@@ -999,19 +1075,38 @@ function upsertMonthlyData(adminToken, rows) {
       }
     }
 
-    // 批次附加新列 (精準自 trueLastRow + 1 開始寫入，徹底解決刪除留白問題)
+    // 批次附加新列
     if (newRowsToAppend.length > 0) {
-      sheet.getRange(trueLastRow + 1, 1, newRowsToAppend.length, headers.length).setValues(newRowsToAppend);
+      var writeRow = trueLastRow + 1;
+      Logger.log('=== 批次寫入 ' + newRowsToAppend.length + ' 列，從第 ' + writeRow + ' 列開始');
+      sheet.getRange(writeRow, 1, newRowsToAppend.length, headers.length).setValues(newRowsToAppend);
     }
 
+    Logger.log('=== 完成 inserted=' + insertedCount + ' updated=' + updatedCount + ' skipped=' + skippedCount + ' noKey=' + skippedNoKeyCount);
+
     var resultMsg = '';
+    var contractNote = skippedOutContractCount > 0 ? '（已自動依專櫃主檔過濾排除非合約期/未建主檔專櫃 ' + skippedOutContractCount + ' 筆）' : '';
+    var debugInfo = '【診斷】rows=' + rows.length + 
+                    ' | 表頭=' + headers.slice(0,4).join(',') + '...' +
+                    ' | trueLastRow=' + trueLastRow + 
+                    ' | 既有=' + Object.keys(keyMap).length +
+                    ' | inserted=' + insertedCount + 
+                    ' | updated=' + updatedCount + 
+                    ' | skipped=' + skippedCount + 
+                    ' | noKey=' + skippedNoKeyCount +
+                    ' | outContract=' + skippedOutContractCount;
+    if (rows.length > 0) {
+      var firstKeys = Object.keys(rows[0]).slice(0, 6).join(',');
+      debugInfo += ' | 第1筆keys=' + firstKeys;
+    }
+
     if (insertedCount === 0 && updatedCount === 0 && skippedCount === 0) {
-      resultMsg = '上傳失敗：未能在輸入的 ' + rows.length + ' 筆資料中辨識出專櫃編號與結帳年月。';
-      return { success: false, message: resultMsg };
+      resultMsg = '上傳未寫入任何資料：' + contractNote + (skippedNoKeyCount > 0 ? '（無效鍵值: ' + skippedNoKeyCount + ' 筆）' : '') + '。\n' + debugInfo;
+      return { success: false, message: resultMsg, debug: debugInfo };
     } else if (insertedCount === 0 && updatedCount === 0 && skippedCount > 0) {
-      resultMsg = '上傳資料皆已存在且內容完全一致！共自動識別並略過 ' + skippedCount + ' 筆重複資料，未進行重複寫入。';
+      resultMsg = '上傳資料皆已存在且內容完全一致！共略過 ' + skippedCount + ' 筆重複資料，未進行重複寫入。' + contractNote + '\n' + debugInfo;
     } else {
-      resultMsg = '月結資料寫入成功！新增 ' + insertedCount + ' 筆（寫入第 ' + (trueLastRow + 1) + ' 至 ' + (trueLastRow + insertedCount) + ' 列），覆蓋更新 ' + updatedCount + ' 筆，略過重複無異動 ' + skippedCount + ' 筆。';
+      resultMsg = '月結資料寫入成功！新增 ' + insertedCount + ' 筆（寫入第 ' + (trueLastRow + 1) + ' 至 ' + (trueLastRow + insertedCount) + ' 列），覆蓋更新 ' + updatedCount + ' 筆，略過重複無異動 ' + skippedCount + ' 筆。' + contractNote + '\n' + debugInfo;
     }
 
     return {
@@ -1019,10 +1114,12 @@ function upsertMonthlyData(adminToken, rows) {
       updatedCount: updatedCount,
       insertedCount: insertedCount,
       skippedCount: skippedCount,
-      message: resultMsg
+      message: resultMsg,
+      debug: debugInfo
     };
 
   } catch (err) {
+    Logger.log('=== upsertMonthlyData 例外: ' + err.message + '\n' + err.stack);
     return { success: false, message: '月結資料 Upsert 失敗: ' + err.message };
   }
 }
@@ -1060,16 +1157,47 @@ function isValueEqual(v1, v2) {
 }
 
 /**
- * 輔助函數：模糊比對物件欄位
+ * 輔助函數：模糊比對物件欄位（高容錯對齊，移除空格、底線、括號與「金額」綴詞）
  */
 function findValueInObject(obj, targetKey) {
   if (obj[targetKey] !== undefined) return obj[targetKey];
-  var cleanTarget = targetKey.replace(/[\s_]/g, '').toLowerCase();
+  
+  function cleanStr(s) {
+    return String(s || '')
+      .replace(/[\s_\(\)（）]/g, '')
+      .replace(/金額/g, '')
+      .toLowerCase();
+  }
+
+  var cleanTarget = cleanStr(targetKey);
   for (var k in obj) {
-    if (k.replace(/[\s_]/g, '').toLowerCase() === cleanTarget) {
+    if (cleanStr(k) === cleanTarget) {
       return obj[k];
     }
   }
+
+  // 二次備援：同義詞別名映射
+  var ALIAS_MAP = {
+    '銷貨淨額未稅': ['銷貨淨額', '銷貨金額', '營業額', '銷貨淨額_未稅金額'],
+    '銷貨淨額稅額': ['銷貨稅額', '銷貨淨額_稅額'],
+    '抽成額合計': ['抽成額_合計', '抽成金額', '抽成總額', '抽成額'],
+    '包底抽成不足(含稅)': ['保底抽成不足補收額', '差額補收金額', '不足補收額', '不足金額'],
+    '應付帳款(含稅)': ['本期實付專櫃金額', '應付帳款_合計', '實付專櫃', '實付金額'],
+    '進貨淨額合計': ['進貨淨額_合計', '進貨淨額']
+  };
+
+  if (ALIAS_MAP[targetKey]) {
+    var aliases = ALIAS_MAP[targetKey];
+    for (var a = 0; a < aliases.length; a++) {
+      var aliasClean = cleanStr(aliases[a]);
+      for (var k2 in obj) {
+        if (cleanStr(k2) === aliasClean) {
+          return obj[k2];
+        }
+      }
+    }
+  }
+
   return undefined;
 }
 
@@ -1293,3 +1421,69 @@ function normalizeYm(val) {
   var s = String(val).replace(/[-/]/g, '').trim();
   return s.length >= 6 ? s.slice(0, 6) : s;
 }
+
+/**
+ * 🔧 測試用函式（可直接在 GAS 編輯器選取此函式後點「執行」）
+ * 模擬前端上傳一筆商場 202608 資料，測試 upsertMonthlyData 寫入是否正常
+ */
+function testUpsert() {
+  var adminEmail = Session.getActiveUser().getEmail();
+  Logger.log('=== 執行者 Email: ' + adminEmail);
+
+  // 模擬一筆前端傳來的資料（同時帶有原始欄位和標準欄位兩組鍵值）
+  var mockRows = [
+    {
+      '專櫃編號': '00001',
+      '專櫃名稱': '測試專櫃A',
+      '結帳年月': '202608',
+      '銷貨淨額_未稅金額': 500000,
+      '銷貨淨額_稅額': 25000,
+      '抽成額_合計': 75000,
+      '銷售年月': '202608',
+      '銷貨淨額': 500000,
+      '銷貨稅額': 25000,
+      '抽成額合計': 75000,
+      '保底抽成不足補收額': 0,
+      '本期實付專櫃金額': 425000
+    }
+  ];
+
+  Logger.log('=== 模擬資料: ' + JSON.stringify(mockRows[0]));
+
+  // SESSION_HEADERS: [0]token [1]emp_id [2]role [3]name [4]created_at [5]expires_at
+  var ss = getSpreadsheet();
+  var tokenSheet = ss.getSheetByName(SESSION_TAB_NAME);
+  var adminToken = null;
+
+  if (tokenSheet) {
+    var tokenData = tokenSheet.getDataRange().getValues();
+    Logger.log('=== Session_Tokens 共 ' + tokenData.length + ' 列');
+    if (tokenData.length > 1) {
+      Logger.log('=== 第1筆: token=' + tokenData[1][0] + ' emp=' + tokenData[1][1] + ' role=' + tokenData[1][2] + ' expires=' + tokenData[1][5]);
+    }
+    var now = new Date();
+    for (var i = 1; i < tokenData.length; i++) {
+      var tRow = tokenData[i];
+      var token   = tRow[0];  // token
+      var role    = tRow[2];  // role
+      var expires = tRow[5];  // expires_at
+      Logger.log('=== row ' + i + ': role=[' + role + '] expires=[' + expires + '] valid=' + (expires && new Date(expires) > now));
+      if (role === 'admin' && expires && new Date(expires) > now) {
+        adminToken = token;
+        Logger.log('=== ✅ 找到有效 admin token，工號: ' + tRow[1]);
+        break;
+      }
+    }
+  } else {
+    Logger.log('=== ❌ 找不到 Session_Tokens 分頁');
+  }
+
+  if (!adminToken) {
+    Logger.log('=== ❌ 找不到有效的 admin token，請先從 Web App 登入管理員帳號後再執行！');
+    return;
+  }
+
+  var result = upsertMonthlyData(adminToken, mockRows);
+  Logger.log('=== 寫入結果: ' + JSON.stringify(result));
+}
+

@@ -303,19 +303,28 @@
             </div>
           </div>
 
-          <!-- 智慧欄位對照與映射區 -->
-          <div class="bg-[#161e46] p-4 rounded-xl border border-[#36458d] space-y-3">
-            <div class="flex items-center justify-between">
+          <!-- 智慧欄位對照與映射區 (可收合/展開手風琴) -->
+          <div class="bg-[#161e46] rounded-xl border border-[#36458d] overflow-hidden">
+            <div onclick="toggleColumnMappingAccordion()" class="p-3.5 flex items-center justify-between cursor-pointer hover:bg-slate-800/40 transition select-none">
               <div class="flex items-center gap-2">
                 <i data-lucide="git-merge" class="w-4 h-4 text-amber-300"></i>
                 <h4 class="text-xs font-bold text-white">智慧欄位對齊映射 (Column Mapping)</h4>
-                <span class="text-[11px] text-slate-300 hidden sm:inline">系統已自動依關鍵字匹配，您亦可下拉調整對應欄位</span>
+                <span id="mapping-summary-pill" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">全部對齊</span>
               </div>
-              <span id="mapping-status-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">核心欄位就緒</span>
+              <div class="flex items-center gap-2">
+                <span id="mapping-status-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">核心欄位就緒</span>
+                <button type="button" id="mapping-toggle-btn" class="text-slate-400 hover:text-white transition p-1">
+                  <i data-lucide="chevron-down" id="mapping-toggle-icon" class="w-4 h-4 transition-transform duration-200"></i>
+                </button>
+              </div>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs" id="column-mapping-grid">
-              <!-- 動態生成映射選單 -->
+            <!-- 折疊主體內容 (預設收起 hidden) -->
+            <div id="column-mapping-content" class="hidden p-4 border-t border-[#36458d]/60 bg-[#12183a]/40 space-y-3">
+              <p class="text-[11px] text-slate-300">系統已自動依欄位名稱比對，若有未對齊或欲變更的欄位，可透過下方選單微調：</p>
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs" id="column-mapping-grid">
+                <!-- 動態生成 21 個映射選單 -->
+              </div>
             </div>
           </div>
 
@@ -506,14 +515,40 @@
     let currentUserSubTab = 'active';
 
     const TARGET_COLUMNS = [
+      // --- 核心識別欄位 ---
       { key: '專櫃編號', label: '專櫃編號', required: true, match: /^專櫃編號$|專櫃代碼|專櫃代號|專櫃ID|櫃位編號|櫃位代號|櫃位|櫃號|店號|Store_?ID|Vendor_?ID|^ID$/i },
-      { key: '銷售年月', label: '銷售年月', required: true, match: /結帳年月|銷售年月|銷售月份|結算年月|帳期年月|年月|期別|月份|帳期|Period|YM|YearMonth/i },
       { key: '專櫃名稱', label: '專櫃名稱', required: false, match: /^專櫃名稱$|櫃位名稱|專櫃名|店名|品牌|Store_?Name|Name/i },
-      { key: '銷貨淨額', label: '銷貨淨額', required: false, match: /銷貨淨額_未稅金額|^銷貨淨額$|銷貨金額|銷貨|銷售額|營業額|總銷金額|總銷|淨額|業績|SalesNet|Sales/i },
-      { key: '銷貨稅額', label: '銷貨稅額', required: false, match: /銷貨淨額_稅額|^銷貨稅額$|銷項稅額|營業稅|Tax/i },
-      { key: '抽成額合計', label: '抽成額合計', required: false, match: /抽成額_合計|^抽成額合計$|抽成額_未稅金額|抽成總額|抽成金額|抽成額|包底\/抽成|抽成|Commission/i },
-      { key: '保底抽成不足補收額', label: '保底抽成不足補收額', required: false, match: /包底抽成不足|保底抽成不足補收額|差額補收金額|不足補收額|不足補收|不足金額|保底補足|補收|Shortage/i },
-      { key: '本期實付專櫃金額', label: '本期實付專櫃金額', required: false, match: /應付帳款|本期實付專櫃金額|實付金額|應付廠商|實付專櫃|淨付金額|Payable/i }
+      { key: '銷售年月', label: '銷售年月', required: true, match: /結帳年月|銷售年月|銷售月份|結算年月|帳期年月|年月|期別|月份|帳期|Period|YM|YearMonth/i },
+      
+      // --- 銷貨淨額明細 ---
+      { key: '銷貨淨額未稅', label: '銷貨淨額未稅', required: false, match: /銷貨淨額_未稅|銷貨淨額未稅|^銷貨淨額$|銷貨金額|營業額|總銷金額|SalesNet/i },
+      { key: '銷貨淨額稅額', label: '銷貨淨額稅額', required: false, match: /銷貨淨額_稅額|銷貨淨額稅額|銷貨稅額|銷項稅額/i },
+      { key: '銷貨淨額免稅', label: '銷貨淨額免稅', required: false, match: /銷貨淨額_免稅|銷貨淨額免稅/i },
+
+      // --- 抽成額明細 ---
+      { key: '抽成額未稅', label: '抽成額未稅', required: false, match: /抽成額_未稅|抽成額未稅/i },
+      { key: '抽成額稅額', label: '抽成額稅額', required: false, match: /抽成額_稅額|抽成額稅額/i },
+      { key: '抽成額免稅', label: '抽成額免稅', required: false, match: /抽成額_免稅|抽成額免稅/i },
+      { key: '抽成額合計', label: '抽成額合計', required: false, match: /抽成額_合計|抽成額合計|抽成總額|抽成金額|^抽成額$|包底\/抽成|Commission/i },
+
+      // --- 進貨淨額明細 ---
+      { key: '進貨淨額未稅', label: '進貨淨額未稅', required: false, match: /進貨淨額_未稅|進貨淨額未稅/i },
+      { key: '進貨淨額稅額', label: '進貨淨額稅額', required: false, match: /進貨淨額_稅額|進貨淨額稅額/i },
+      { key: '進貨淨額免稅金額', label: '進貨淨額免稅金額', required: false, match: /進貨淨額_免稅|進貨淨額免稅/i },
+      { key: '進貨淨額合計', label: '進貨淨額合計', required: false, match: /進貨淨額_合計|進貨淨額合計|^進貨淨額$|進貨合計/i },
+
+      // --- 代扣款與租金明細 ---
+      { key: '代扣款開立(未稅)', label: '代扣款開立(未稅)', required: false, match: /代扣.*開立.*未稅|代扣款.*\(開立\).*未稅|代扣款開立/i },
+      { key: '代扣款稅額', label: '代扣款稅額', required: false, match: /代扣.*稅額|代扣款稅額/i },
+      { key: '代扣款(不開立免稅)', label: '代扣款(不開立免稅)', required: false, match: /代扣.*不開立|代扣.*免稅/i },
+      { key: '租金未稅', label: '租金未稅', required: false, match: /租金.*未稅/i },
+      { key: '租金稅額', label: '租金稅額', required: false, match: /租金.*稅額/i },
+
+      // --- 結算總計與其他 ---
+      { key: '應收合計', label: '應收合計', required: false, match: /應收帳款_合計|應收帳款合計|應收合計|^應收帳款$/i },
+      { key: '包底抽成不足(含稅)', label: '包底抽成不足(含稅)', required: false, match: /包底抽成不足|保底抽成不足|差額補收金額|不足補收額|不足補收|不足金額|Shortage/i },
+      { key: '應付帳款(含稅)', label: '應付帳款(含稅)', required: false, match: /應付帳款_合計|應付帳款\(含稅\)|本期實付專櫃金額|實付專櫃|實付金額|應付廠商|^應付帳款$/i },
+      { key: '抽成別', label: '抽成別', required: false, match: /^抽成別$|合約抽成別|抽成型態|抽成方式/i }
     ];
 
     // 初始化驗證
@@ -1062,18 +1097,61 @@
       renderColumnMappingUI(parsedExcelHeaders);
     }
 
+    function toggleColumnMappingAccordion(forceState) {
+      const content = document.getElementById('column-mapping-content');
+      const icon = document.getElementById('mapping-toggle-icon');
+      if (!content) return;
+
+      const isHidden = content.classList.contains('hidden');
+      const shouldOpen = forceState !== undefined ? forceState : isHidden;
+
+      if (shouldOpen) {
+        content.classList.remove('hidden');
+        if (icon) icon.style.transform = 'rotate(180deg)';
+      } else {
+        content.classList.add('hidden');
+        if (icon) icon.style.transform = 'rotate(0deg)';
+      }
+    }
+
     function checkMappingStatus() {
       const badge = document.getElementById('mapping-status-badge');
+      const pill = document.getElementById('mapping-summary-pill');
       const idMapped = Boolean(currentColumnMapping['專櫃編號']);
       const ymMapped = Boolean(currentColumnMapping['銷售年月']);
+
+      // 計算有多少個非必填欄位未對齊
+      let unmappedCount = 0;
+      TARGET_COLUMNS.forEach(tc => {
+        if (!currentColumnMapping[tc.key]) unmappedCount++;
+      });
+
+      if (pill) {
+        if (unmappedCount === 0) {
+          pill.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold';
+          pill.innerText = '全部 21 欄位已對齊';
+        } else {
+          pill.className = 'text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-semibold';
+          pill.innerText = `${TARGET_COLUMNS.length - unmappedCount}/${TARGET_COLUMNS.length} 已對齊 (${unmappedCount} 未對齊)`;
+        }
+      }
 
       if (idMapped && ymMapped) {
         badge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40';
         badge.innerText = '核心欄位就緒';
+
+        // 若有欄位未對齊，自動展開提醒使用者；若全部對齊，則維持收起
+        if (unmappedCount > 0) {
+          toggleColumnMappingAccordion(true);
+        } else {
+          toggleColumnMappingAccordion(false);
+        }
         return true;
       } else {
         badge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-400/40';
         badge.innerText = '請指定 [專櫃編號] 與 [銷售年月]';
+        // 核心必填未對齊時，強制展開
+        toggleColumnMappingAccordion(true);
         return false;
       }
     }
