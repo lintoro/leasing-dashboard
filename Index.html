@@ -780,7 +780,7 @@
         const matchesCat = (catFilter === "ALL" || store.category === catFilter);
         const matchesType = (typeFilter === "ALL" || store.type.includes(typeFilter));
         const matchesSearch = !search || store.id.toLowerCase().includes(search) || store.name.toLowerCase().includes(search) || (store.company && store.company.toLowerCase().includes(search));
-        return matchesCat && matchesType && matchesSearch && getDaysDiff(store.end) >= -30;
+        return matchesCat && matchesType && matchesSearch && getDaysDiff(store.end) >= -90;
       });
 
       const metrics = filtered.map(store => {
@@ -1162,7 +1162,8 @@
 
     function renderMasterTable(rows) {
       const tbody = document.getElementById("master-table-body");
-      const active = rows.filter(r => r.daysToExpiry >= 0);
+      // 納入當日仍在櫃 + 基準日前 3 個月內 (90 天) 已到期/撤櫃之專櫃
+      const active = rows.filter(r => r.daysToExpiry >= -90);
       document.getElementById("table-count").innerText = `${active.length} 筆`;
 
       tbody.innerHTML = active.map(r => {
@@ -1180,8 +1181,21 @@
           yoyClass = r.yoy >= 0 ? 'text-emerald-400' : 'text-rose-400';
         }
 
+        let expiryDisplay = '';
+        let expiryClass = '';
+        if (r.daysToExpiry < 0) {
+          expiryDisplay = `已撤 ${Math.abs(r.daysToExpiry)} 天`;
+          expiryClass = 'text-slate-400 bg-slate-800/60 px-1.5 py-0.5 rounded text-[11px]';
+        } else if (r.daysToExpiry <= 90) {
+          expiryDisplay = `剩 ${r.daysToExpiry} 天`;
+          expiryClass = 'text-rose-400 font-bold';
+        } else {
+          expiryDisplay = `${r.daysToExpiry} 天`;
+          expiryClass = 'text-slate-300';
+        }
+
         return `
-        <tr class="table-row-hover transition text-xs" onclick='window.openDrawerByKey("${encodeURIComponent(r.keyId)}")'>
+        <tr class="table-row-hover transition text-xs ${r.daysToExpiry < 0 ? 'opacity-80' : ''}" onclick='window.openDrawerByKey("${encodeURIComponent(r.keyId)}")'>
           <td class="py-2 px-3 font-mono text-[#CADCFC]">${r.isVendorGroup?`${r.storeCount}櫃`:r.store.id}</td>
           <td class="py-2 px-3 font-bold text-white">${r.displayName}</td>
           <td class="py-2 px-3 text-[11px] text-slate-300">${currentViewMode==='STORE'?r.companyName:'--'}</td>
@@ -1194,7 +1208,7 @@
           <td class="py-2 px-3 text-right font-bold text-emerald-400">${r.realMallRevenue>0?fmtMoney(r.realMallRevenue):'$0'}</td>
           <td class="py-2 px-3 text-right text-cyan-300">${!isSalesValid?'--':(r.ocr*100).toFixed(1)+'%'}</td>
           <td class="py-2 px-3 text-center">${r.shortageCount>0?`<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300">${r.shortageCount}月</span>`:'0'}</td>
-          <td class="py-2 px-3 text-center ${r.daysToExpiry<=90?'text-rose-400 font-bold':'text-slate-300'}">${r.daysToExpiry} 天</td>
+          <td class="py-2 px-3 text-center ${expiryClass}">${expiryDisplay}</td>
           <td class="py-2 px-3 text-center"><span class="text-[10px] px-2 py-0.5 rounded border font-bold ${r.decisionTag.color}">${r.decisionTag.text}</span></td>
         </tr>
       `;}).join('');
