@@ -580,6 +580,38 @@
     let chartInstances = {};
     let moduleViews = { rank: 'chart', ocr: 'table', 'top-sales': 'table', 'top-rev': 'table', trend: 'chart' };
 
+    // 索引快取：專櫃月度對應、月份對應、專櫃對應 (O(1) 聚合提速)
+    let monthlyStorePeriodMap = new Map();
+    let monthlyPeriodMap = new Map();
+    let monthlyStoreMap = new Map();
+
+    function rebuildMonthlyIndices() {
+      monthlyStorePeriodMap.clear();
+      monthlyPeriodMap.clear();
+      monthlyStoreMap.clear();
+
+      for (let i = 0; i < activeMonthlyRaw.length; i++) {
+        const r = activeMonthlyRaw[i];
+        if (!r || !r.id || !r.period) continue;
+
+        monthlyStorePeriodMap.set(`${r.id}_${r.period}`, r);
+
+        let pList = monthlyPeriodMap.get(r.period);
+        if (!pList) {
+          pList = [];
+          monthlyPeriodMap.set(r.period, pList);
+        }
+        pList.push(r);
+
+        let sList = monthlyStoreMap.get(r.id);
+        if (!sList) {
+          sList = [];
+          monthlyStoreMap.set(r.id, sList);
+        }
+        sList.push(r);
+      }
+    }
+
     function getAllAvailablePeriods() {
       const pSet = new Set(activeMonthlyRaw.map(m => m.period).filter(Boolean));
       const arr = Array.from(pSet).sort();
@@ -618,12 +650,12 @@
     }
 
     function fmtMoney(num) {
-      if (num === null || num === undefined || isNaN(num)) return '$0';
+      if (num === null || num === undefined || isNaN(num) || !isFinite(num)) return '$0';
       return '$' + Math.round(num).toLocaleString('zh-TW');
     }
 
     function fmtPct(num) {
-      if (num === null || num === undefined || isNaN(num)) return '0.0%';
+      if (num === null || num === undefined || isNaN(num) || !isFinite(num)) return '--';
       return `${num > 0 ? '+' : ''}${(num * 100).toFixed(1)}%`;
     }
 
@@ -661,6 +693,7 @@
         if (statusText) statusText.innerText = "展示模式 (2025/01/01)";
         if (statusDot) statusDot.className = "w-2 h-2 rounded-full bg-cyan-400";
 
+        rebuildMonthlyIndices();
         initFilters();
         window.applyRangePreset('LATEST_1M');
         showToast("已重設回展示模式");
@@ -749,11 +782,26 @@
       });
 
       const metrics = filtered.map(store => {
-        const curr = activeMonthlyRaw.filter(m => m.id === store.id && periods.includes(m.period));
-        const prior = activeMonthlyRaw.filter(m => m.id === store.id && priors.includes(m.period));
+        // O(1) Hash Map 聚合查詢，完全消除全表 O(N * M) 遍歷
+        const curr = [];
+        for (let i = 0; i < periods.length; i++) {
+          const rec = monthlyStorePeriodMap.get(`${store.id}_${periods[i]}`);
+          if (rec) curr.push(rec);
+        }
+
+        const prior = [];
+        for (let i = 0; i < priors.length; i++) {
+          const rec = monthlyStorePeriodMap.get(`${store.id}_${priors[i]}`);
+          if (rec) prior.push(rec);
+        }
+
         const salesNet = curr.reduce((sum, r) => sum + (r.salesNet || 0), 0);
         const priorSales = prior.reduce((sum, r) => sum + (r.salesNet || 0), 0);
-        const yoy = priorSales > 0 ? (salesNet - priorSales) / priorSales : 0;
+
+        // 修復 YoY 計算盲區：區分「新進駐/無同期數據」與「真零成長」
+        const hasPriorData = priorSales > 0;
+        const yoy = hasPriorData ? (salesNet - priorSales) / priorSales : null;
+        const isNewStore = !hasPriorData && salesNet > 0;
         
         const commTotal = curr.reduce((sum, r) => sum + (r.commTotal || 0), 0);
         let minShortageAmount = curr.reduce((sum, r) => sum + (r.minShortage || 0), 0);
@@ -769,19 +817,24 @@
           if (shortageCount === 0) shortageCount = 1;
         }
 
-        const ocr = salesNet > 0 ? (realRev / salesNet) : 0;
-        const pingSales = store.area > 0 ? (salesNet / months) / store.area : 0;
+        // 邊界防護：銷貨為 0 或退換貨（負銷貨）之防護，避免除以零或產生負 OCR
+        const hasValidSales = salesNet > 0;
+        const ocr = hasValidSales ? (realRev / salesNet) : 0;
+        const pingSales = (store.area > 0 && hasValidSales) ? (salesNet / months) / store.area : 0;
         const daysToExpiry = getDaysDiff(store.end);
 
         let tag = { text: "穩定觀察", color: "bg-slate-500/20 text-slate-300 border-slate-500/30" };
         let strategy = "營運平穩，正常履約中。";
         if (salesNet <= 0) {
           tag = { text: "新進駐/籌備中", color: "bg-blue-500/20 text-blue-300 border-blue-400/30" };
-          strategy = "尚無銷貨記錄（籌備或未出表），追蹤進場與開業進度。";
-        } else if (shortageCount >= 2 || (priorSales > 0 && yoy <= -0.10)) {
+          strategy = salesNet < 0 ? "本期累計淨額為負（退貨大於銷貨），請查對退換貨明細及退抽手續。" : "尚無銷貨記錄（籌備或未出表），追蹤進場與開業進度。";
+        } else if (shortageCount >= 2 || (hasPriorData && yoy !== null && yoy <= -0.10)) {
           tag = { text: "建議汰換/調降保底", color: "bg-rose-500/20 text-rose-300 border-rose-500/30" };
           strategy = "多次保底不足或營收衰退，建議期滿評估調降保底或更換新品牌。";
-        } else if (yoy >= 0.08 && ocr >= 0.08) {
+        } else if (isNewStore) {
+          tag = { text: "新進駐/首期追蹤", color: "bg-cyan-500/20 text-cyan-300 border-cyan-400/30" };
+          strategy = "新櫃進駐首期營運，尚無去年同期數據，重點追蹤集客力與坪效表現。";
+        } else if (yoy !== null && yoy >= 0.08 && ocr >= 0.08) {
           tag = { text: "核心續約/評估提抽", color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" };
           strategy = "成長強勁且集客力高，建議提前洽談長約並評估適度調升抽成率。";
         }
@@ -797,7 +850,7 @@
             shortageCount: shortageCount,
             payable: curr.reduce((s,r)=>s+(r.payable||0),0) 
           },
-          priorSalesNet: priorSales, yoy, realMallRevenue: realRev, ocr, pingSales, shortageCount, daysToExpiry, decisionTag: tag, strategy, underlyingStores: []
+          priorSalesNet: priorSales, hasPriorData, isNewStore, yoy, realMallRevenue: realRev, ocr, pingSales, shortageCount, daysToExpiry, decisionTag: tag, strategy, underlyingStores: []
         };
       });
 
@@ -817,22 +870,28 @@
         const totalRev = items.reduce((s, it) => s + it.realMallRevenue, 0);
         const totalComm = items.reduce((s, it) => s + it.currentRecord.commTotal, 0);
         const totalShortageAmt = items.reduce((s, it) => s + it.currentRecord.minShortage, 0);
-        const yoy = totalPrior > 0 ? (totalSales - totalPrior) / totalPrior : 0;
+        
+        const hasPrior = totalPrior > 0;
+        const yoy = hasPrior ? (totalSales - totalPrior) / totalPrior : null;
         const ocr = totalSales > 0 ? (totalRev / totalSales) : 0;
         const shortage = items.reduce((s, it) => s + it.shortageCount, 0);
         const minDays = Math.min(...items.map(it => it.daysToExpiry));
 
         let tag = { text: "集團觀察", color: "bg-slate-500/20 text-slate-300 border-slate-500/30" };
         let strategy = `旗下共納管 ${items.length} 個專櫃，整體營運平穩。`;
-        if (totalSales <= 0) tag = { text: "新進駐/籌備中", color: "bg-blue-500/20 text-blue-300 border-blue-400/30" };
-        else if (shortage >= 2) tag = { text: "集團協商/調整櫃位", color: "bg-rose-500/20 text-rose-300 border-rose-500/30" };
-        else if (yoy >= 0.08) tag = { text: "戰略夥伴/深化合作", color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" };
+        if (totalSales <= 0) {
+          tag = { text: "新進駐/籌備中", color: "bg-blue-500/20 text-blue-300 border-blue-400/30" };
+        } else if (shortage >= 2) {
+          tag = { text: "集團協商/調整櫃位", color: "bg-rose-500/20 text-rose-300 border-rose-500/30" };
+        } else if (yoy !== null && yoy >= 0.08) {
+          tag = { text: "戰略夥伴/深化合作", color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" };
+        }
 
         return {
           keyId: `VENDOR_${vName}`, isVendorGroup: true, storeCount: items.length, displayName: vName, companyName: vName,
           store: { id: `集團(${items.length}櫃)`, name: vName, floor: items.map(it => it.store.floor).join(', '), category: items[0].store.category, area: totalArea, start: items[0].store.start, end: items[0].store.end, type: `${items.length}份合約`, minGuarantee: 0, rateText: "複合合約" },
           currentRecord: { salesNet: totalSales, commTotal: totalComm, minShortage: totalShortageAmt, shortageCount: shortage, payable: 0 },
-          priorSalesNet: totalPrior, yoy, realMallRevenue: totalRev, ocr, pingSales: totalArea > 0 ? (totalSales/months)/totalArea : 0, shortageCount: shortage, daysToExpiry: minDays, decisionTag: tag, strategy, underlyingStores: items
+          priorSalesNet: totalPrior, hasPriorData: hasPrior, isNewStore: !hasPrior && totalSales > 0, yoy, realMallRevenue: totalRev, ocr, pingSales: (totalArea > 0 && totalSales > 0) ? (totalSales/months)/totalArea : 0, shortageCount: shortage, daysToExpiry: minDays, decisionTag: tag, strategy, underlyingStores: items
         };
       });
     }
@@ -848,15 +907,18 @@
       const rows = computeDynamicData(selectedStartPeriod, selectedEndPeriod, cat, type, search);
       const totalGMV = rows.reduce((s, r) => s + r.currentRecord.salesNet, 0);
       const totalPriorGMV = rows.reduce((s, r) => s + r.priorSalesNet, 0);
-      const gmvYoY = totalPriorGMV > 0 ? (totalGMV - totalPriorGMV) / totalPriorGMV : 0;
+      const hasPriorGMV = totalPriorGMV > 0;
+      const gmvYoY = hasPriorGMV ? (totalGMV - totalPriorGMV) / totalPriorGMV : null;
       const totalRev = rows.reduce((s, r) => s + r.realMallRevenue, 0);
       const overallOCR = totalGMV > 0 ? (totalRev / totalGMV) : 0;
 
       document.getElementById("kpi-gmv").innerText = fmtMoney(totalGMV);
-      document.getElementById("kpi-gmv-trend").innerHTML = `<span class="${gmvYoY >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${fmtPct(gmvYoY)}</span> <span class="text-[#CADCFC]/70 text-[10px]">vs 去年同期</span>`;
+      document.getElementById("kpi-gmv-trend").innerHTML = gmvYoY !== null 
+        ? `<span class="${gmvYoY >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${fmtPct(gmvYoY)}</span> <span class="text-[#CADCFC]/70 text-[10px]">vs 去年同期</span>`
+        : `<span class="text-slate-400">新進駐/無同期</span>`;
       document.getElementById("kpi-revenue").innerText = fmtMoney(totalRev);
-      document.getElementById("kpi-ocr").innerText = (overallOCR * 100).toFixed(1) + "%";
-      document.getElementById("kpi-risk-count").innerHTML = `${rows.filter(r => (r.shortageCount >= 1 || r.yoy <= -0.10) && r.currentRecord.salesNet > 0).length} <span class="text-xs font-normal text-white">家</span>`;
+      document.getElementById("kpi-ocr").innerText = totalGMV > 0 ? (overallOCR * 100).toFixed(1) + "%" : "--";
+      document.getElementById("kpi-risk-count").innerHTML = `${rows.filter(r => (r.shortageCount >= 1 || (r.yoy !== null && r.yoy <= -0.10)) && r.currentRecord.salesNet > 0).length} <span class="text-xs font-normal text-white">家</span>`;
       document.getElementById("kpi-expiry-count").innerHTML = `${rows.filter(r => r.daysToExpiry <= 90 && r.daysToExpiry >= 0).length} <span class="text-xs font-normal text-white">家</span>`;
 
       renderTopSalesModule(rows, totalGMV);
@@ -879,7 +941,7 @@
             <td class="py-1.5 px-2 font-bold truncate max-w-[120px] text-white">${r.displayName}</td>
             <td class="py-1.5 px-2 text-right text-amber-300 font-mono font-bold">${fmtMoney(r.currentRecord.salesNet)}</td>
             <td class="py-1.5 px-2 text-right text-[#CADCFC] font-mono">${totalGMV > 0 ? ((r.currentRecord.salesNet/totalGMV)*100).toFixed(1)+'%' : '0.0%'}</td>
-            <td class="py-1.5 px-2 text-right font-bold ${r.yoy >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${fmtPct(r.yoy)}</td>
+            <td class="py-1.5 px-2 text-right font-bold ${r.yoy === null ? 'text-blue-300 text-[11px]' : (r.yoy >= 0 ? 'text-emerald-400' : 'text-rose-400')}">${r.yoy === null ? '新進駐' : fmtPct(r.yoy)}</td>
           </tr>
         `).join('');
       }
@@ -926,8 +988,15 @@
       if (sorted.length > 0) {
         document.getElementById("rank-top1-sales").innerText = sorted[0].displayName;
         document.getElementById("rank-top1-rev").innerText = [...sorted].sort((a,b)=>b.realMallRevenue-a.realMallRevenue)[0].displayName;
-        const topYoY = [...sorted].sort((a,b)=>b.yoy-a.yoy)[0];
-        document.getElementById("rank-top1-yoy").innerText = `${topYoY.displayName} (${fmtPct(topYoY.yoy)})`;
+        
+        // 排除無同期專櫃，避免誤將新進櫃作為最高成長率
+        const validYoYStores = sorted.filter(r => r.yoy !== null);
+        if (validYoYStores.length > 0) {
+          const topYoY = [...validYoYStores].sort((a,b)=>b.yoy-a.yoy)[0];
+          document.getElementById("rank-top1-yoy").innerText = `${topYoY.displayName} (${fmtPct(topYoY.yoy)})`;
+        } else {
+          document.getElementById("rank-top1-yoy").innerText = "-- (首期無同期)";
+        }
       }
       const tbody = document.getElementById("rank-table-tbody");
       if (tbody) {
@@ -937,7 +1006,7 @@
             <td class="py-1.5 px-2 font-bold truncate max-w-[120px] text-white">${r.displayName}</td>
             <td class="py-1.5 px-2 text-right text-amber-300 font-mono font-bold">${fmtMoney(r.currentRecord.salesNet)}</td>
             <td class="py-1.5 px-2 text-right text-emerald-300 font-mono font-bold">${fmtMoney(r.realMallRevenue)}</td>
-            <td class="py-1.5 px-2 text-right font-bold ${r.yoy >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${fmtPct(r.yoy)}</td>
+            <td class="py-1.5 px-2 text-right font-bold ${r.yoy === null ? 'text-blue-300 text-[11px]' : (r.yoy >= 0 ? 'text-emerald-400' : 'text-rose-400')}">${r.yoy === null ? '新進駐' : fmtPct(r.yoy)}</td>
           </tr>
         `).join('');
       }
@@ -954,15 +1023,23 @@
     }
 
     function renderOcrHealthChart(rows) {
+      // 正常計算：銷貨 > 0 且 OCR 介於 0% ~ 80%
       const normal = rows.filter(r => r.currentRecord.salesNet > 0 && r.ocr > 0 && r.ocr <= 0.80).sort((a,b) => b.ocr - a.ocr);
-      const anomaly = rows.filter(r => r.currentRecord.salesNet > 0 && (r.ocr <= 0 || r.ocr > 0.80));
+      // 異常包含：銷貨 <= 0，或 OCR <= 0，或 OCR > 80%
+      const anomaly = rows.filter(r => r.currentRecord.salesNet <= 0 || r.ocr <= 0 || r.ocr > 0.80);
 
       const anomalyContainer = document.getElementById("ocr-anomaly-container");
       const anomalyBadges = document.getElementById("ocr-anomaly-badges");
       if (anomalyContainer && anomalyBadges) {
         if (anomaly.length > 0) {
           anomalyContainer.classList.remove("hidden");
-          anomalyBadges.innerHTML = anomaly.map(r => `<span class="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/40 cursor-pointer" onclick='window.openDrawerByKey("${encodeURIComponent(r.keyId)}")'>${r.displayName} (${r.ocr <= 0 ? '無收益/0%' : '>80%'})</span>`).join('');
+          anomalyBadges.innerHTML = anomaly.map(r => {
+            let labelText = '>80%';
+            if (r.currentRecord.salesNet < 0) labelText = '負銷貨';
+            else if (r.currentRecord.salesNet === 0) labelText = '銷貨為0';
+            else if (r.ocr <= 0) labelText = '無收益/0%';
+            return `<span class="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/40 cursor-pointer" onclick='window.openDrawerByKey("${encodeURIComponent(r.keyId)}")'>${r.displayName} (${labelText})</span>`;
+          }).join('');
         } else {
           anomalyContainer.classList.add("hidden");
         }
@@ -999,8 +1076,15 @@
       else if (currentTrendRange === '3Y') periods = periods.slice(-36);
 
       const labels = periods.map(p => `${p.substring(2,4)}/${p.substring(4,6)}`);
-      const sales = periods.map(p => activeMonthlyRaw.filter(m => m.period === p && storeIds.has(m.id)).reduce((s, m) => s + (m.salesNet || 0), 0));
-      const rev = periods.map(p => activeMonthlyRaw.filter(m => m.period === p && storeIds.has(m.id)).reduce((s, m) => s + (m.commTotal || 0) + (m.minShortage || 0), 0));
+      // 利用 monthlyPeriodMap 提速查詢，無須全表掃描
+      const sales = periods.map(p => {
+        const list = monthlyPeriodMap.get(p) || [];
+        return list.filter(m => storeIds.has(m.id)).reduce((s, m) => s + (m.salesNet || 0), 0);
+      });
+      const rev = periods.map(p => {
+        const list = monthlyPeriodMap.get(p) || [];
+        return list.filter(m => storeIds.has(m.id)).reduce((s, m) => s + (m.commTotal || 0) + (m.minShortage || 0), 0);
+      });
 
       const tbody = document.getElementById("trend-table-tbody");
       if (tbody) {
@@ -1079,24 +1163,39 @@
       const active = rows.filter(r => r.daysToExpiry >= 0);
       document.getElementById("table-count").innerText = `${active.length} 筆`;
 
-      tbody.innerHTML = active.map(r => `
+      tbody.innerHTML = active.map(r => {
+        const isSalesValid = r.currentRecord.salesNet > 0;
+        let yoyDisplay = '';
+        let yoyClass = '';
+        if (r.currentRecord.salesNet <= 0) {
+          yoyDisplay = r.currentRecord.salesNet < 0 ? '負銷貨' : '籌備中';
+          yoyClass = 'text-blue-300';
+        } else if (r.yoy === null) {
+          yoyDisplay = '新進駐';
+          yoyClass = 'text-cyan-300 font-semibold';
+        } else {
+          yoyDisplay = fmtPct(r.yoy);
+          yoyClass = r.yoy >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        }
+
+        return `
         <tr class="table-row-hover transition text-xs" onclick='window.openDrawerByKey("${encodeURIComponent(r.keyId)}")'>
           <td class="py-2 px-3 font-mono text-[#CADCFC]">${r.isVendorGroup?`${r.storeCount}櫃`:r.store.id}</td>
           <td class="py-2 px-3 font-bold text-white">${r.displayName}</td>
           <td class="py-2 px-3 text-[11px] text-slate-300">${currentViewMode==='STORE'?r.companyName:'--'}</td>
           <td class="py-2 px-3 text-[11px] text-[#CADCFC]">${r.store.floor} · ${r.store.category}</td>
           <td class="py-2 px-3 text-right">${r.store.area.toFixed(1)} 坪</td>
-          <td class="py-2 px-3 text-right font-bold text-white">${r.currentRecord.salesNet<=0?'--':fmtMoney(r.currentRecord.salesNet)}</td>
-          <td class="py-2 px-3 text-right text-slate-400">${r.priorSalesNet?fmtMoney(r.priorSalesNet):'--'}</td>
-          <td class="py-2 px-3 text-right font-bold ${r.yoy>=0?'text-emerald-400':'text-rose-400'}">${r.currentRecord.salesNet<=0?'新進駐':fmtPct(r.yoy)}</td>
-          <td class="py-2 px-3 text-right text-cyan-300">${r.currentRecord.salesNet<=0?'--':fmtMoney(r.pingSales)}</td>
-          <td class="py-2 px-3 text-right font-bold text-emerald-400">${r.currentRecord.salesNet<=0?'--':fmtMoney(r.realMallRevenue)}</td>
-          <td class="py-2 px-3 text-right text-cyan-300">${r.currentRecord.salesNet<=0?'--':(r.ocr*100).toFixed(1)+'%'}</td>
+          <td class="py-2 px-3 text-right font-bold text-white">${!isSalesValid?'--':fmtMoney(r.currentRecord.salesNet)}</td>
+          <td class="py-2 px-3 text-right text-slate-400">${r.priorSalesNet>0?fmtMoney(r.priorSalesNet):'--'}</td>
+          <td class="py-2 px-3 text-right font-bold ${yoyClass}">${yoyDisplay}</td>
+          <td class="py-2 px-3 text-right text-cyan-300">${!isSalesValid?'--':fmtMoney(r.pingSales)}</td>
+          <td class="py-2 px-3 text-right font-bold text-emerald-400">${r.realMallRevenue>0?fmtMoney(r.realMallRevenue):'$0'}</td>
+          <td class="py-2 px-3 text-right text-cyan-300">${!isSalesValid?'--':(r.ocr*100).toFixed(1)+'%'}</td>
           <td class="py-2 px-3 text-center">${r.shortageCount>0?`<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300">${r.shortageCount}月</span>`:'0'}</td>
           <td class="py-2 px-3 text-center ${r.daysToExpiry<=90?'text-rose-400 font-bold':'text-slate-300'}">${r.daysToExpiry} 天</td>
           <td class="py-2 px-3 text-center"><span class="text-[10px] px-2 py-0.5 rounded border font-bold ${r.decisionTag.color}">${r.decisionTag.text}</span></td>
         </tr>
-      `).join('');
+      `;}).join('');
     }
 
     window.openDrawerByKey = function(encodedKey) {
@@ -1194,6 +1293,7 @@
         payable: parseFloat(getFieldValue(r, ["應付帳款(含稅)", "應付帳款", "Payable"])) || 0
       })).filter(m => m.id && m.period);
 
+      rebuildMonthlyIndices();
       initFilters();
       window.applyRangePreset('LATEST_1M');
 
@@ -1310,6 +1410,7 @@
                 minShortage: parseFloat(r["包底抽成不足(含稅)"] || r["包底抽成不足額"]) || 0
               })).filter(m => m.id && m.period);
             }
+            rebuildMonthlyIndices();
             initFilters();
             window.applyRangePreset('LATEST_1M');
             showToast("CSV 匯入成功");
@@ -1344,6 +1445,7 @@
 
     window.onload = function() {
       lucide.createIcons();
+      rebuildMonthlyIndices();
       initFilters();
       window.applyRangePreset('LATEST_1M');
     };
