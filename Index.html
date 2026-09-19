@@ -1152,64 +1152,94 @@
       }
     };
 
+    function populateDataFromRows(mRows, rRows) {
+      currentBenchmarkDate = new Date();
+
+      const parsedStores = mRows.map(r => ({
+        id: normalizeId(getFieldValue(r, ["專櫃編號", "Vendor_ID", "編號", "專櫃代號", "ID"])),
+        name: getFieldValue(r, ["專櫃名稱", "Vendor_Name", "專櫃", "品牌名稱", "Name"]) || "未知專櫃",
+        company: getFieldValue(r, ["廠商名稱", "專櫃廠商", "所屬廠商", "Company_Name", "Vendor_Company", "廠商", "Company"]) || "獨立廠商",
+        floor: getFieldValue(r, ["樓層", "Floor", "樓面"]) || "1F",
+        category: getFieldValue(r, ["品類大類", "品類", "Category_L1", "Category", "業種"]) || "一般",
+        subCategory: getFieldValue(r, ["品類細項", "細項", "Category_L2", "SubCategory"]) || "",
+        area: parseFloat(getFieldValue(r, ["租賃坪數", "坪數", "Area_Pings", "Area"])) || 10,
+        start: parseStandardDate(getFieldValue(r, ["合約起始日", "合約開始日", "Contract_Start", "起始日", "Start_Date"]) || "2024-01-01"),
+        end: parseStandardDate(getFieldValue(r, ["合約到期日", "合約結束日", "Contract_End", "到期日", "End_Date"]) || "2025-12-31"),
+        type: getFieldValue(r, ["約定抽成別", "抽成別", "Commission_Type", "Type"]) || "一般抽成",
+        minGuarantee: parseFloat(getFieldValue(r, ["月約定保底金額", "約定保底金額", "保底金額", "Min_Guaranteed_Amount", "保底"])) || 0
+      })).filter(s => s.id && s.id !== "00000");
+
+      const storeMap = new Map();
+      parsedStores.forEach(s => {
+        if (!storeMap.has(s.id)) {
+          storeMap.set(s.id, s);
+        } else {
+          const existing = storeMap.get(s.id);
+          if ((s.end || "") >= (existing.end || "")) {
+            storeMap.set(s.id, s);
+          }
+        }
+      });
+      activeStoreMaster = Array.from(storeMap.values());
+
+      activeMonthlyRaw = rRows.map(r => ({
+        id: normalizeId(getFieldValue(r, ["專櫃編號", "Vendor_ID", "編號", "ID"])),
+        name: getFieldValue(r, ["專櫃名稱", "Vendor_Name"]) || "",
+        period: String(getFieldValue(r, ["銷售年月", "Period", "年月"]) || "").replace(/[-/]/g, '').trim(),
+        salesNet: parseFloat(getFieldValue(r, ["銷貨淨額未稅金額", "銷貨淨額未稅", "Sales_Net", "銷貨淨額"])) || 0,
+        salesTax: parseFloat(getFieldValue(r, ["銷貨淨額稅額", "銷貨稅額"])) || 0,
+        commTotal: parseFloat(getFieldValue(r, ["抽成額合計", "Comm_Total", "抽成合計"])) || 0,
+        deductTotal: parseFloat(getFieldValue(r, ["應收合計", "應收代扣款合計(含稅)", "應收總計(含稅)"])) || 0,
+        minShortage: parseFloat(getFieldValue(r, ["包底抽成不足(含稅)", "包底抽成不足額", "Min_Shortage", "不足額"])) || 0,
+        payable: parseFloat(getFieldValue(r, ["應付帳款(含稅)", "應付帳款", "Payable"])) || 0
+      })).filter(m => m.id && m.period);
+
+      initFilters();
+      window.applyRangePreset('LATEST_1M');
+
+      const periods = getAllAvailablePeriods();
+      const latestP = periods[periods.length - 1];
+      const displayPeriodText = latestP ? `${latestP.substring(0,4)}/${latestP.substring(4,6)}` : '即時';
+
+      document.getElementById("sync-status-text").innerText = `正式模式 (${displayPeriodText})`;
+      document.getElementById("sync-status-dot").className = "w-2 h-2 rounded-full bg-emerald-400";
+    }
+
     async function triggerRealSync() {
-      const savedId = localStorage.getItem("g_sheet_id") || "YOUR_SPREADSHEET_ID";
+      // 1. 若運行於 Google Apps Script Web App 環境，優先採用後端安全代理 (100% 試算表 ID 零外洩)
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        showToast("正透過 GAS 後端安全讀取試算表...", "info");
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res && res.success && res.masterRows && res.rawRows) {
+              populateDataFromRows(res.masterRows, res.rawRows);
+              showToast(res.userEmail ? ("同步成功！主管: " + res.userEmail) : "試算表資料同步成功！");
+            } else {
+              showToast("同步失敗: 資料格式異常", "alert");
+            }
+          })
+          .withFailureHandler(function(err) {
+            showToast("後端讀取失敗: " + (err.message || err), "alert");
+          })
+          .apiGetSyncData();
+        return;
+      }
+
+      // 2. 若為本機開發且手動輸入了試算表 ID
+      const customSheetId = localStorage.getItem("g_sheet_id");
       const masterTab = localStorage.getItem("g_sheet_master_tab") || "Store_Contract_Master";
       const rawTab = localStorage.getItem("g_sheet_raw_tab") || "Monthly_Settlement_Raw";
+
+      if (!customSheetId) {
+        showToast("提示：目前未指定自訂試算表 ID，請於設定視窗中輸入或部署至 GAS", "alert");
+        return;
+      }
+
       try {
-        const [mRows, rRows] = await Promise.all([fetchSheetTabAsCSV(savedId, masterTab), fetchSheetTabAsCSV(savedId, rawTab)]);
+        const [mRows, rRows] = await Promise.all([fetchSheetTabAsCSV(customSheetId, masterTab), fetchSheetTabAsCSV(customSheetId, rawTab)]);
         if (mRows.length > 0 && rRows.length > 0) {
-          
-          currentBenchmarkDate = new Date();
-
-          const parsedStores = mRows.map(r => ({
-            id: normalizeId(getFieldValue(r, ["專櫃編號", "Vendor_ID", "編號", "專櫃代號", "ID"])),
-            name: getFieldValue(r, ["專櫃名稱", "Vendor_Name", "專櫃", "品牌名稱", "Name"]) || "未知專櫃",
-            company: getFieldValue(r, ["廠商名稱", "專櫃廠商", "所屬廠商", "Company_Name", "Vendor_Company", "廠商", "Company"]) || "獨立廠商",
-            floor: getFieldValue(r, ["樓層", "Floor", "樓面"]) || "1F",
-            category: getFieldValue(r, ["品類大類", "品類", "Category_L1", "Category", "業種"]) || "一般",
-            subCategory: getFieldValue(r, ["品類細項", "細項", "Category_L2", "SubCategory"]) || "",
-            area: parseFloat(getFieldValue(r, ["租賃坪數", "坪數", "Area_Pings", "Area"])) || 10,
-            start: parseStandardDate(getFieldValue(r, ["合約起始日", "合約開始日", "Contract_Start", "起始日", "Start_Date"]) || "2024-01-01"),
-            end: parseStandardDate(getFieldValue(r, ["合約到期日", "合約結束日", "Contract_End", "到期日", "End_Date"]) || "2025-12-31"),
-            type: getFieldValue(r, ["約定抽成別", "抽成別", "Commission_Type", "Type"]) || "一般抽成",
-            minGuarantee: parseFloat(getFieldValue(r, ["月約定保底金額", "約定保底金額", "保底金額", "Min_Guaranteed_Amount", "保底"])) || 0
-          })).filter(s => s.id && s.id !== "00000");
-
-          const storeMap = new Map();
-          parsedStores.forEach(s => {
-            if (!storeMap.has(s.id)) {
-              storeMap.set(s.id, s);
-            } else {
-              const existing = storeMap.get(s.id);
-              if ((s.end || "") >= (existing.end || "")) {
-                storeMap.set(s.id, s);
-              }
-            }
-          });
-          activeStoreMaster = Array.from(storeMap.values());
-
-          activeMonthlyRaw = rRows.map(r => ({
-            id: normalizeId(getFieldValue(r, ["專櫃編號", "Vendor_ID", "編號", "ID"])),
-            name: getFieldValue(r, ["專櫃名稱", "Vendor_Name"]) || "",
-            period: String(getFieldValue(r, ["銷售年月", "Period", "年月"]) || "").replace(/[-/]/g, '').trim(),
-            salesNet: parseFloat(getFieldValue(r, ["銷貨淨額未稅金額", "銷貨淨額未稅", "Sales_Net", "銷貨淨額"])) || 0,
-            salesTax: parseFloat(getFieldValue(r, ["銷貨淨額稅額", "銷貨稅額"])) || 0,
-            commTotal: parseFloat(getFieldValue(r, ["抽成額合計", "Comm_Total", "抽成合計"])) || 0,
-            deductTotal: parseFloat(getFieldValue(r, ["應收合計", "應收代扣款合計(含稅)", "應收總計(含稅)"])) || 0,
-            minShortage: parseFloat(getFieldValue(r, ["包底抽成不足(含稅)", "包底抽成不足額", "Min_Shortage", "不足額"])) || 0,
-            payable: parseFloat(getFieldValue(r, ["應付帳款(含稅)", "應付帳款", "Payable"])) || 0
-          })).filter(m => m.id && m.period);
-
-          initFilters();
-          window.applyRangePreset('LATEST_1M');
-
-          const periods = getAllAvailablePeriods();
-          const latestP = periods[periods.length - 1];
-          const displayPeriodText = latestP ? `${latestP.substring(0,4)}/${latestP.substring(4,6)}` : '即時';
-
-          document.getElementById("sync-status-text").innerText = `正式模式 (${displayPeriodText})`;
-          document.getElementById("sync-status-dot").className = "w-2 h-2 rounded-full bg-emerald-400";
+          populateDataFromRows(mRows, rRows);
+          showToast("自訂試算表同步完成！");
         }
       } catch (err) {
         showToast("同步失敗: " + err.message, "alert");

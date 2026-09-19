@@ -1,0 +1,16 @@
+# 嚴格資安保護：防範所有環境變數與金鑰檔案上傳至 Git 倉庫
+.env
+.env.local
+.env.production
+.env.development
+.env.*
+!.env.example
+*.pem
+*.key
+.clasp.json
+
+# 系統與日誌
+node_modules/
+dist/
+*.log
+.DS_Store
