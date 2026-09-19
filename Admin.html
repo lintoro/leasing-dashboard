@@ -216,6 +216,20 @@
           </div>
         </div>
 
+        <!-- 人員分類子頁籤 (現行 / 已停用) -->
+        <div class="flex items-center gap-2 border-b border-[#36458d] pb-2 text-xs">
+          <button id="user-subtab-active" onclick="switchUserSubTab('active')" class="px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 bg-[#4d7cfe] text-white shadow">
+            <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
+            <span>現行人員</span>
+            <span id="active-user-count" class="px-1.5 py-0.2 bg-white/20 text-white rounded-full text-[10px]">0</span>
+          </button>
+          <button id="user-subtab-disabled" onclick="switchUserSubTab('disabled')" class="px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 bg-[#161e46] text-[#CADCFC] hover:bg-[#36458d]/50">
+            <i data-lucide="user-x" class="w-3.5 h-3.5"></i>
+            <span>已停用人員</span>
+            <span id="disabled-user-count" class="px-1.5 py-0.2 bg-rose-500/30 text-rose-300 rounded-full text-[10px]">0</span>
+          </button>
+        </div>
+
         <div class="overflow-x-auto rounded-xl border border-[#36458d]">
           <table class="w-full text-left text-xs border-collapse">
             <thead class="bg-[#161e46] text-[#CADCFC] uppercase font-bold border-b border-[#36458d]">
@@ -284,8 +298,24 @@
               </button>
               <button onclick="submitExcelUpsert()" id="submit-excel-btn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-lg shadow-emerald-600/30">
                 <i data-lucide="database" class="w-4 h-4"></i>
-                <span>確認增量 Upsert 更新</span>
+                <span>確認寫入試算表</span>
               </button>
+            </div>
+          </div>
+
+          <!-- 智慧欄位對照與映射區 -->
+          <div class="bg-[#161e46] p-4 rounded-xl border border-[#36458d] space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i data-lucide="git-merge" class="w-4 h-4 text-amber-300"></i>
+                <h4 class="text-xs font-bold text-white">智慧欄位對齊映射 (Column Mapping)</h4>
+                <span class="text-[11px] text-slate-300 hidden sm:inline">系統已自動依關鍵字匹配，您亦可下拉調整對應欄位</span>
+              </div>
+              <span id="mapping-status-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">核心欄位就緒</span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs" id="column-mapping-grid">
+              <!-- 動態生成映射選單 -->
             </div>
           </div>
 
@@ -471,6 +501,20 @@
     let pendingUsersCache = [];
     let masterDataCache = [];
     let parsedExcelData = [];
+    let parsedExcelHeaders = [];
+    let currentColumnMapping = {};
+    let currentUserSubTab = 'active';
+
+    const TARGET_COLUMNS = [
+      { key: '專櫃編號', label: '專櫃編號', required: true, match: /專櫃編號|專櫃代碼|專櫃代號|專櫃ID|櫃位編號|櫃位代號|櫃位|櫃號|店號|Store_?ID|Vendor_?ID|^ID$/i },
+      { key: '銷售年月', label: '銷售年月', required: true, match: /銷售年月|銷售月份|結算年月|帳期年月|年月|期別|月份|帳期|Period|YM|YearMonth/i },
+      { key: '專櫃名稱', label: '專櫃名稱', required: false, match: /專櫃名稱|櫃位名稱|專櫃名|店名|品牌|Store_?Name|Name/i },
+      { key: '銷貨淨額', label: '銷貨淨額', required: false, match: /銷貨淨額|銷貨金額|銷貨|銷售額|營業額|總銷金額|總銷|淨額|業績|SalesNet|Sales/i },
+      { key: '銷貨稅額', label: '銷貨稅額', required: false, match: /銷貨稅額|稅額|銷項稅額|營業稅|Tax/i },
+      { key: '抽成額合計', label: '抽成額合計', required: false, match: /抽成額合計|抽成總額|抽成金額|抽成額|包底\/抽成|抽成|Commission/i },
+      { key: '保底抽成不足補收額', label: '保底抽成不足補收額', required: false, match: /保底抽成不足補收額|差額補收金額|不足補收額|不足補收|不足金額|保底補足|補收|Shortage/i },
+      { key: '本期實付專櫃金額', label: '本期實付專櫃金額', required: false, match: /本期實付專櫃金額|實付金額|應付廠商|實付專櫃|淨付金額|Payable/i }
+    ];
 
     // 初始化驗證
     window.addEventListener('DOMContentLoaded', () => {
@@ -520,52 +564,58 @@
       navigateTo('login');
     }
 
-    function switchTab(tab) {
-      ['users', 'upload', 'master'].forEach(t => {
-        const btn = document.getElementById('tab-btn-' + t);
-        const sec = document.getElementById('tab-content-' + t);
-        if (t === tab) {
-          btn.classList.add('active');
-          sec.classList.remove('hidden');
-        } else {
-          btn.classList.remove('active');
-          sec.classList.add('hidden');
-        }
-      });
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById('tab-btn-' + tabId)?.classList.add('active');
 
-      if (tab === 'master' && masterDataCache.length === 0) {
+      document.getElementById('tab-content-users').classList.add('hidden');
+      document.getElementById('tab-content-upload').classList.add('hidden');
+      document.getElementById('tab-content-master').classList.add('hidden');
+
+      const content = document.getElementById('tab-content-' + tabId);
+      if (content) content.classList.remove('hidden');
+
+      if (tabId === 'master' && masterDataCache.length === 0) {
         loadMasterData();
       }
     }
 
-    function showGlobalAlert(msg, type = 'info') {
-      const box = document.getElementById('global-alert');
-      const text = document.getElementById('global-alert-msg');
-      const icon = document.getElementById('global-alert-icon');
+    function showGlobalAlert(msg, type) {
+      const alertBox = document.getElementById('global-alert');
+      const alertMsg = document.getElementById('global-alert-msg');
+      const alertIcon = document.getElementById('global-alert-icon');
+      if (!alertBox || !alertMsg) return;
 
-      box.className = 'rounded-xl p-3.5 text-xs font-semibold flex items-start justify-between gap-2 shadow transition-all ' + 
-        (type === 'error' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' :
-         type === 'success' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
-         'bg-blue-500/20 text-blue-200 border border-blue-500/40');
+      alertMsg.innerText = msg;
+      alertBox.className = 'rounded-xl p-3.5 text-xs font-semibold flex items-start justify-between gap-2 shadow transition-all';
 
-      icon.setAttribute('data-lucide', type === 'error' ? 'alert-circle' : type === 'success' ? 'check-circle-2' : 'info');
-      text.innerText = msg;
-      box.classList.remove('hidden');
+      if (type === 'success') {
+        alertBox.classList.add('bg-emerald-950/80', 'text-emerald-200', 'border', 'border-emerald-500/40');
+        alertIcon.setAttribute('data-lucide', 'check-circle');
+      } else if (type === 'error') {
+        alertBox.classList.add('bg-rose-950/80', 'text-rose-200', 'border', 'border-rose-500/40');
+        alertIcon.setAttribute('data-lucide', 'alert-triangle');
+      } else {
+        alertBox.classList.add('bg-blue-950/80', 'text-blue-200', 'border', 'border-blue-500/40');
+        alertIcon.setAttribute('data-lucide', 'info');
+      }
+
+      alertBox.classList.remove('hidden');
       lucide.createIcons();
     }
 
     function hideGlobalAlert() {
-      document.getElementById('global-alert').classList.add('hidden');
+      document.getElementById('global-alert')?.classList.add('hidden');
     }
 
     // =========================================================================
-    // 模組 1: 使用者審核與管理
+    // 模組 1: 使用者審核與帳號管理
     // =========================================================================
 
     function loadPendingUsers() {
       const token = localStorage.getItem('LEASING_AUTH_TOKEN');
       const tbody = document.getElementById('pending-users-tbody');
-      tbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-400">載入中...</td></tr>';
+      const badge = document.getElementById('pending-badge');
 
       if (window.google && google.script && google.script.run) {
         google.script.run
@@ -574,17 +624,16 @@
               pendingUsersCache = res.requests || [];
               renderPendingTable(pendingUsersCache);
             } else {
-              tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-rose-400">${res ? res.message : '後端回傳異常'}</td></tr>`;
+              tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-rose-400">${res ? res.message : '載入待審名單失敗'}</td></tr>`;
             }
           })
           .withFailureHandler(function(err) {
-            tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-rose-400">連線異常: ${err.message || String(err)}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-rose-400">連線異常: ${err.message || String(err)}</td></tr>`;
           })
           .gasGetPendingRequests(token);
       } else {
-        // 地端測試模擬
         pendingUsersCache = [
-          { emp_id: 'E0099', name: '李專案', department: '營運企劃課', email: 'lee@company.com', reason: '審閱到期專櫃數據', applied_at: '2025-01-15 10:20:00' }
+          { emp_id: 'C0099', name: '王招商', department: '招商二課', email: 'wang@example.com', reason: '審閱廠商租售比與續約條件', applied_at: '2025-01-15 10:20:00' }
         ];
         renderPendingTable(pendingUsersCache);
       }
@@ -595,7 +644,7 @@
       const badge = document.getElementById('pending-badge');
 
       if (!list || list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-400">目前尚無任何待審核之申請紀錄</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-slate-400">目前無待審核之帳號開通申請</td></tr>';
         badge.classList.add('hidden');
         badge.innerText = '0';
         return;
@@ -675,6 +724,20 @@
       }
     }
 
+    function switchUserSubTab(tab) {
+      currentUserSubTab = tab;
+      const activeBtn = document.getElementById('user-subtab-active');
+      const disabledBtn = document.getElementById('user-subtab-disabled');
+      if (tab === 'active') {
+        activeBtn.className = 'px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 bg-[#4d7cfe] text-white shadow';
+        disabledBtn.className = 'px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 bg-[#161e46] text-[#CADCFC] hover:bg-[#36458d]/50';
+      } else {
+        disabledBtn.className = 'px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 bg-rose-600 text-white shadow';
+        activeBtn.className = 'px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 bg-[#161e46] text-[#CADCFC] hover:bg-[#36458d]/50';
+      }
+      filterUsersTable();
+    }
+
     function loadAllUsers() {
       const token = localStorage.getItem('LEASING_AUTH_TOKEN');
       const tbody = document.getElementById('all-users-tbody');
@@ -684,7 +747,8 @@
           .withSuccessHandler(function(res) {
             if (res && res.success) {
               allUsersCache = res.users || [];
-              renderAllUsersTable(allUsersCache);
+              updateUserSubTabCounts();
+              filterUsersTable();
             } else {
               tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-rose-400">${res ? res.message : '載入名冊失敗'}</td></tr>`;
             }
@@ -696,16 +760,42 @@
       } else {
         allUsersCache = [
           { emp_id: 'A0001', name: '開發主管', department: '招商處', role: 'admin', status: 'approved', locked: false, last_login_at: '2025-01-15 09:00:00' },
-          { emp_id: 'B0012', name: '營運專員A', department: '營運處', role: 'viewer', status: 'approved', locked: true, last_login_at: '2025-01-14 17:30:00' }
+          { emp_id: 'B0012', name: '營運專員A', department: '營運處', role: 'viewer', status: 'approved', locked: true, last_login_at: '2025-01-14 17:30:00' },
+          { emp_id: 'D0005', name: '離職同仁', department: '招商一課', role: 'viewer', status: 'disabled', locked: false, last_login_at: '2024-11-01 12:00:00' }
         ];
-        renderAllUsersTable(allUsersCache);
+        updateUserSubTabCounts();
+        filterUsersTable();
       }
+    }
+
+    function updateUserSubTabCounts() {
+      const activeCount = (allUsersCache || []).filter(u => String(u.status).toLowerCase() !== 'disabled').length;
+      const disabledCount = (allUsersCache || []).filter(u => String(u.status).toLowerCase() === 'disabled').length;
+      document.getElementById('active-user-count').innerText = activeCount;
+      document.getElementById('disabled-user-count').innerText = disabledCount;
+    }
+
+    function filterUsersTable() {
+      const q = document.getElementById('user-search-input')?.value.trim().toLowerCase() || '';
+      let filtered = (allUsersCache || []).filter(u => {
+        const isDisabled = String(u.status).toLowerCase() === 'disabled';
+        return (currentUserSubTab === 'disabled') ? isDisabled : !isDisabled;
+      });
+
+      if (q) {
+        filtered = filtered.filter(u => 
+          (u.emp_id && u.emp_id.toLowerCase().includes(q)) ||
+          (u.name && u.name.toLowerCase().includes(q)) ||
+          (u.department && u.department.toLowerCase().includes(q))
+        );
+      }
+      renderAllUsersTable(filtered);
     }
 
     function renderAllUsersTable(list) {
       const tbody = document.getElementById('all-users-tbody');
       if (!list || list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-slate-400">查無任何使用者紀錄</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400">目前${currentUserSubTab === 'disabled' ? '無已停用之使用者紀錄' : '無符合條件之現行使用者紀錄'}</td></tr>`;
         return;
       }
 
@@ -726,43 +816,33 @@
             </td>
             <td class="p-3">
               <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isDisabled ? 'bg-rose-900/60 text-rose-300' : isApproved ? 'bg-emerald-900/50 text-emerald-300' : 'bg-amber-900/50 text-amber-300'}">
-                ${u.status || '未知'}
+                ${isDisabled ? '已停用' : isApproved ? '正常使用' : (u.status || '待處理')}
               </span>
             </td>
             <td class="p-3">
               ${isLocked ? '<span class="text-rose-400 font-bold flex items-center gap-1"><i data-lucide="lock" class="w-3.5 h-3.5"></i> 已鎖定</span>' : '<span class="text-emerald-400">正常</span>'}
             </td>
             <td class="p-3 text-[11px] text-slate-400">${u.last_login_at || '未登入過'}</td>
-            <td class="p-3 text-right space-x-1.5">
-              ${isLocked || isApproved ? `
-                <button onclick="unlockAndResetUser('${u.emp_id}')" class="px-2 py-1 bg-blue-600/30 hover:bg-blue-600 text-blue-200 hover:text-white font-bold rounded-lg transition text-[11px]">
-                  解鎖/重置密碼
-                </button>
-              ` : ''}
+            <td class="p-3 text-right space-x-1.5 whitespace-nowrap">
               ${!isDisabled ? `
+                ${isLocked || isApproved ? `
+                  <button onclick="unlockAndResetUser('${u.emp_id}')" class="px-2 py-1 bg-blue-600/30 hover:bg-blue-600 text-blue-200 hover:text-white font-bold rounded-lg transition text-[11px]">
+                    解鎖/重置密碼
+                  </button>
+                ` : ''}
                 <button onclick="disableUser('${u.emp_id}')" class="px-2 py-1 bg-slate-700 hover:bg-rose-700 text-slate-300 hover:text-white font-bold rounded-lg transition text-[11px]">
                   停用
                 </button>
-              ` : ''}
+              ` : `
+                <button onclick="enableUser('${u.emp_id}')" class="px-2.5 py-1 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-200 hover:text-white font-bold rounded-lg transition text-[11px]">
+                  <i data-lucide="check" class="w-3 h-3 inline mr-0.5"></i> 重新啟用
+                </button>
+              `}
             </td>
           </tr>
         `;
       }).join('');
       lucide.createIcons();
-    }
-
-    function filterUsersTable() {
-      const q = document.getElementById('user-search-input').value.trim().toLowerCase();
-      if (!q) {
-        renderAllUsersTable(allUsersCache);
-        return;
-      }
-      const filtered = allUsersCache.filter(u => 
-        (u.emp_id && u.emp_id.toLowerCase().includes(q)) ||
-        (u.name && u.name.toLowerCase().includes(q)) ||
-        (u.department && u.department.toLowerCase().includes(q))
-      );
-      renderAllUsersTable(filtered);
     }
 
     function unlockAndResetUser(empId) {
@@ -803,8 +883,32 @@
       }
     }
 
+    function enableUser(empId) {
+      if (!confirm(`確定重新啟用工號 [${empId}]？該帳號將恢復正常使用權限。`)) return;
+
+      const token = localStorage.getItem('LEASING_AUTH_TOKEN');
+      if (window.google && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res.success) {
+              showGlobalAlert(res.message, 'success');
+              loadAllUsers();
+            } else {
+              showGlobalAlert(res.message, 'error');
+            }
+          })
+          .gasEnableUser(token, empId);
+      } else {
+        showGlobalAlert(`地端展示：工號 [${empId}] 已恢復啟用！`, 'success');
+        const u = allUsersCache.find(it => it.emp_id === empId);
+        if (u) u.status = 'approved';
+        updateUserSubTabCounts();
+        filterUsersTable();
+      }
+    }
+
     // =========================================================================
-    // 模組 2: 月結資料 Excel 增量更新
+    // 模組 2: 月結資料 Excel 增量更新 (智慧表頭探測與欄位映射)
     // =========================================================================
 
     function handleExcelSelect(e) {
@@ -818,15 +922,67 @@
           const workbook = XLSX.read(data, { type: 'array' });
           const firstSheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[firstSheetName];
-          const json = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-
-          if (!json || json.length === 0) {
+          
+          // 1. 以二維陣列讀取工作表，以便掃描表頭列
+          const rawGrid = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+          if (!rawGrid || rawGrid.length === 0) {
             showGlobalAlert('選取的 Excel 檔案未包含任何數據', 'error');
             return;
           }
 
-          parsedExcelData = json;
-          showExcelPreview(file.name, json);
+          // 2. 智慧掃描前 15 列，自動尋找最像表頭的一列
+          let bestHeaderRowIdx = 0;
+          let maxMatches = 0;
+          for (let r = 0; r < Math.min(15, rawGrid.length); r++) {
+            const row = rawGrid[r];
+            if (!Array.isArray(row)) continue;
+            let matches = 0;
+            row.forEach(cell => {
+              const str = String(cell || '').trim();
+              if (TARGET_COLUMNS.some(tc => tc.match.test(str))) matches++;
+            });
+            if (matches > maxMatches) {
+              maxMatches = matches;
+              bestHeaderRowIdx = r;
+            }
+          }
+
+          const headers = (rawGrid[bestHeaderRowIdx] || []).map(h => String(h || '').trim()).filter(Boolean);
+          if (headers.length === 0) {
+            showGlobalAlert('無法辨識此 Excel 的欄位表頭，請確認檔案格式', 'error');
+            return;
+          }
+
+          parsedExcelHeaders = headers;
+
+          // 3. 組合數據列 (從表頭列次一列開始)
+          const rows = [];
+          for (let r = bestHeaderRowIdx + 1; r < rawGrid.length; r++) {
+            const gridRow = rawGrid[r];
+            if (!gridRow || !gridRow.some(c => String(c || '').trim() !== '')) continue;
+            const obj = {};
+            headers.forEach((h, cIdx) => {
+              obj[h] = gridRow[cIdx] !== undefined ? gridRow[cIdx] : '';
+            });
+            rows.push(obj);
+          }
+
+          if (rows.length === 0) {
+            showGlobalAlert('在標題列下方未找到任何資料列，請確認 Excel 檔案內容', 'error');
+            return;
+          }
+
+          parsedExcelData = rows;
+
+          // 4. 自動對應欄位
+          currentColumnMapping = {};
+          TARGET_COLUMNS.forEach(tc => {
+            const matchedHeader = headers.find(h => tc.match.test(h));
+            currentColumnMapping[tc.key] = matchedHeader || '';
+          });
+
+          renderColumnMappingUI(headers);
+          showExcelPreview(file.name, rows, headers, bestHeaderRowIdx);
         } catch (err) {
           showGlobalAlert('Excel 檔案解析失敗: ' + err.message, 'error');
         }
@@ -834,12 +990,62 @@
       reader.readAsArrayBuffer(file);
     }
 
-    function showExcelPreview(fileName, data) {
+    function renderColumnMappingUI(excelHeaders) {
+      const grid = document.getElementById('column-mapping-grid');
+      if (!grid) return;
+
+      grid.innerHTML = TARGET_COLUMNS.map(tc => {
+        const isMapped = Boolean(currentColumnMapping[tc.key]);
+        const isRequired = tc.required;
+        
+        return `
+          <div class="p-2.5 rounded-xl border ${isRequired && !isMapped ? 'border-rose-500/60 bg-rose-950/20' : 'border-[#36458d] bg-[#1e2761]/60'} space-y-1">
+            <div class="flex items-center justify-between">
+              <span class="font-bold ${isRequired ? 'text-amber-300' : 'text-[#CADCFC]'} flex items-center gap-1">
+                ${tc.label} ${isRequired ? '<span class="text-rose-400 font-extrabold">*必填</span>' : ''}
+              </span>
+              ${isMapped ? '<span class="text-[9px] text-emerald-400 font-bold">已對齊</span>' : (isRequired ? '<span class="text-[9px] text-rose-400 font-bold">未對齊</span>' : '<span class="text-[9px] text-slate-400">未指定</span>')}
+            </div>
+            <select onchange="updateColumnMapping('${tc.key}', this.value)" class="w-full bg-[#161e46] border ${isRequired && !isMapped ? 'border-rose-400' : 'border-[#36458d]'} rounded-lg px-2 py-1 text-white text-xs outline-none focus:border-[#4d7cfe]">
+              <option value="">-- 未包含此欄位 / 留空 --</option>
+              ${excelHeaders.map(h => `
+                <option value="${h}" ${currentColumnMapping[tc.key] === h ? 'selected' : ''}>${h}</option>
+              `).join('')}
+            </select>
+          </div>
+        `;
+      }).join('');
+
+      checkMappingStatus();
+      lucide.createIcons();
+    }
+
+    function updateColumnMapping(targetKey, selectedExcelHeader) {
+      currentColumnMapping[targetKey] = selectedExcelHeader;
+      renderColumnMappingUI(parsedExcelHeaders);
+    }
+
+    function checkMappingStatus() {
+      const badge = document.getElementById('mapping-status-badge');
+      const idMapped = Boolean(currentColumnMapping['專櫃編號']);
+      const ymMapped = Boolean(currentColumnMapping['銷售年月']);
+
+      if (idMapped && ymMapped) {
+        badge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40';
+        badge.innerText = '核心欄位就緒';
+        return true;
+      } else {
+        badge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-400/40';
+        badge.innerText = '請指定 [專櫃編號] 與 [銷售年月]';
+        return false;
+      }
+    }
+
+    function showExcelPreview(fileName, data, headers, headerRowIdx) {
       document.getElementById('excel-preview-section').classList.remove('hidden');
       document.getElementById('preview-file-name').innerText = fileName;
-      document.getElementById('preview-row-count').innerText = `共 ${data.length} 筆資料`;
+      document.getElementById('preview-row-count').innerText = `共 ${data.length} 筆資料 (偵測第 ${headerRowIdx + 1} 列為表頭)`;
 
-      const headers = Object.keys(data[0] || {});
       const thead = document.getElementById('preview-thead');
       thead.innerHTML = `<tr>${headers.map(h => `<th class="p-2.5 whitespace-nowrap">${h}</th>`).join('')}</tr>`;
 
@@ -858,6 +1064,8 @@
 
     function clearExcelUpload() {
       parsedExcelData = [];
+      parsedExcelHeaders = [];
+      currentColumnMapping = {};
       document.getElementById('excel-file-input').value = '';
       document.getElementById('excel-preview-section').classList.add('hidden');
     }
@@ -868,18 +1076,35 @@
         return;
       }
 
-      if (!confirm(`確定將這 ${parsedExcelData.length} 筆月結資料寫入 Google Sheets？\n\n系統將自動比對「專櫃編號+銷售年月」：\n1. 資料已存在且內容一致：自動識別重複並略過（不重複寫入）\n2. 資料已存在但內容不同：覆蓋更新該筆\n3. 全新專櫃年月：新增寫入`)) return;
+      if (!checkMappingStatus()) {
+        showGlobalAlert('請先於下方對照區指定「專櫃編號」與「銷售年月」所對應的 Excel 欄位！', 'error');
+        return;
+      }
+
+      if (!confirm(`確定將這 ${parsedExcelData.length} 筆月結資料依欄位對照寫入 Google Sheets？\n\n系統將自動比對「專櫃編號+銷售年月」：\n1. 資料已存在且內容一致：自動識別重複並略過（不重複寫入）\n2. 資料已存在但內容不同：覆蓋更新該筆\n3. 全新專櫃年月：新增寫入`)) return;
+
+      // 依據使用者確認的欄位對應關係，轉換為系統標準結構
+      const standardizedData = parsedExcelData.map(rawRow => {
+        const standardItem = {};
+        TARGET_COLUMNS.forEach(tc => {
+          const excelHeader = currentColumnMapping[tc.key];
+          if (excelHeader && rawRow[excelHeader] !== undefined && rawRow[excelHeader] !== null) {
+            standardItem[tc.key] = rawRow[excelHeader];
+          }
+        });
+        return standardItem;
+      });
 
       const token = localStorage.getItem('LEASING_AUTH_TOKEN');
       const btn = document.getElementById('submit-excel-btn');
       btn.disabled = true;
-      btn.innerHTML = '<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 增量寫入中...';
+      btn.innerHTML = '<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 寫入試算表中...';
 
       if (window.google && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(res) {
             btn.disabled = false;
-            btn.innerHTML = '<i data-lucide="database" class="w-4 h-4"></i> <span>確認增量 Upsert 更新</span>';
+            btn.innerHTML = '<i data-lucide="database" class="w-4 h-4"></i> <span>確認寫入試算表</span>';
             lucide.createIcons();
 
             if (res.success) {
@@ -891,16 +1116,16 @@
           })
           .withFailureHandler(function(err) {
             btn.disabled = false;
-            btn.innerHTML = '<i data-lucide="database" class="w-4 h-4"></i> <span>確認增量 Upsert 更新</span>';
+            btn.innerHTML = '<i data-lucide="database" class="w-4 h-4"></i> <span>確認寫入試算表</span>';
             lucide.createIcons();
             showGlobalAlert('伺服器錯誤: ' + (err.message || err), 'error');
           })
-          .upsertMonthlyData(token, parsedExcelData);
+          .upsertMonthlyData(token, standardizedData);
       } else {
         btn.disabled = false;
-        btn.innerHTML = '<i data-lucide="database" class="w-4 h-4"></i> <span>確認增量 Upsert 更新</span>';
+        btn.innerHTML = '<i data-lucide="database" class="w-4 h-4"></i> <span>確認寫入試算表</span>';
         lucide.createIcons();
-        showGlobalAlert(`地端展示：成功更新 5 筆，新增 10 筆月結資料！`, 'success');
+        showGlobalAlert(`地端展示：成功依映射寫入 ${standardizedData.length} 筆月結資料！`, 'success');
         clearExcelUpload();
       }
     }

@@ -682,6 +682,42 @@ function gasDisableUser(adminToken, targetEmpId) {
 }
 
 /**
+ * 管理員重新啟用（復權）已停用帳號
+ */
+function gasEnableUser(adminToken, targetEmpId) {
+  var auth = validateToken(adminToken);
+  if (!auth.valid || auth.role !== 'admin') {
+    return { success: false, message: '權限不足' };
+  }
+
+  try {
+    var cleanTarget = normalizeEmpId(targetEmpId);
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName(USER_TAB_NAME);
+    var data = sheet.getDataRange().getValues();
+    var headers = data[0].map(function(h) { return String(h).trim(); });
+
+    var empCol = headers.indexOf('emp_id');
+    var statusCol = headers.indexOf('status');
+    var failCol = headers.indexOf('login_fail_count');
+    var lockCol = headers.indexOf('locked');
+
+    for (var i = 1; i < data.length; i++) {
+      if (normalizeEmpId(data[i][empCol]) === cleanTarget) {
+        var rowIdx = i + 1;
+        sheet.getRange(rowIdx, statusCol + 1).setValue('approved');
+        if (failCol !== -1) sheet.getRange(rowIdx, failCol + 1).setValue(0);
+        if (lockCol !== -1) sheet.getRange(rowIdx, lockCol + 1).setValue(false);
+        return { success: true, message: '工號 [' + cleanTarget + '] 已重新啟用！' };
+      }
+    }
+    return { success: false, message: '找不到指定工號' };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
+/**
  * 管理員解鎖帳號並重置為 000000 (強制登入後改密碼)
  */
 function gasUnlockAndResetUser(adminToken, targetEmpId) {
@@ -830,9 +866,20 @@ function upsertMonthlyData(adminToken, rows) {
       return { success: false, message: '找不到月結分頁: ' + rawTab };
     }
 
+    var DEFAULT_MONTHLY_HEADERS = [
+      '專櫃編號', '專櫃名稱', '銷售年月', '銷貨淨額', '銷貨稅額', 
+      '抽成額合計', '保底抽成不足補收額', '不足次數', '本期實付專櫃金額'
+    ];
+
     var sheetData = sheet.getDataRange().getValues();
-    if (sheetData.length < 1) {
-      return { success: false, message: '月結分頁未定義表頭' };
+    var hasValidHeaders = (sheetData.length > 0 && sheetData[0] && sheetData[0].some(function(c) { return String(c).trim() !== ''; }));
+
+    if (!hasValidHeaders) {
+      // 試算表若被清空，自動修復並補建標準表頭
+      sheet.clear();
+      sheet.appendRow(DEFAULT_MONTHLY_HEADERS);
+      sheet.getRange(1, 1, 1, DEFAULT_MONTHLY_HEADERS.length).setFontWeight('bold').setBackground('#1E2761').setFontColor('#CADCFC');
+      sheetData = sheet.getDataRange().getValues();
     }
 
     var headers = sheetData[0].map(function(h) { return String(h).trim(); });
