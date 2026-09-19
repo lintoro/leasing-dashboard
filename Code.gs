@@ -884,23 +884,36 @@ function upsertMonthlyData(adminToken, rows) {
 
     var headers = sheetData[0].map(function(h) { return String(h).trim(); });
     
-    // 找出關鍵欄位索引
-    var idColName = headers.find(function(h) { return /專櫃編號|專櫃代號|Vendor_ID|ID/i.test(h); }) || headers[0];
-    var ymColName = headers.find(function(h) { return /銷售年月|年月|Period|YM/i.test(h); }) || headers[1];
+    // 找出關鍵欄位索引 (擴大正規比對以相容 結帳年月、期別、月份)
+    var idColName = headers.find(function(h) { return /專櫃編號|專櫃代號|Vendor_ID|^ID$/i.test(h); }) || headers[0];
+    var ymColName = headers.find(function(h) { return /銷售年月|結帳年月|結算年月|帳期|年月|月份|Period|YM/i.test(h); }) || (headers.length > 2 ? headers[2] : headers[1]);
 
     var idColIdx = headers.indexOf(idColName);
     var ymColIdx = headers.indexOf(ymColName);
 
-    // 建立現有資料的複合鍵索引 Map (key -> { rowNum: r + 1, dataRowIndex: r })
+    // 尋找試算表中真正的最後一筆非空資料列 (避免使用者清除內容後留下的空白列導致寫入跳至末端)
+    var trueLastRow = 1;
     var keyMap = {};
+
     for (var r = 1; r < sheetData.length; r++) {
-      var rowId = normalizeId(sheetData[r][idColIdx]);
-      var rowYm = normalizeYm(sheetData[r][ymColIdx]);
-      if (rowId && rowYm) {
-        keyMap[rowId + '_' + rowYm] = {
-          rowNum: r + 1,
-          dataRowIndex: r
-        };
+      var row = sheetData[r];
+      var hasRealContent = false;
+      for (var c = 0; c < row.length; c++) {
+        if (row[c] !== '' && row[c] !== null && row[c] !== undefined) {
+          hasRealContent = true;
+          break;
+        }
+      }
+      if (hasRealContent) {
+        trueLastRow = r + 1;
+        var rowId = normalizeId(sheetData[r][idColIdx]);
+        var rowYm = normalizeYm(sheetData[r][ymColIdx]);
+        if (rowId && rowYm) {
+          keyMap[rowId + '_' + rowYm] = {
+            rowNum: r + 1,
+            dataRowIndex: r
+          };
+        }
       }
     }
 
@@ -917,7 +930,20 @@ function upsertMonthlyData(adminToken, rows) {
 
       for (var k in item) {
         if (/專櫃編號|專櫃代號|Vendor_ID|^ID$/i.test(k)) inputId = normalizeId(item[k]);
-        if (/銷售年月|年月|Period|^YM$/i.test(k)) inputYm = normalizeYm(item[k]);
+        if (/銷售年月|結帳年月|結算年月|帳期年月|年月|期別|月份|Period|^YM$/i.test(k)) inputYm = normalizeYm(item[k]);
+      }
+
+      // 值特徵雙重保險：若欄位名稱未直接對應，以值特徵自動識別
+      if (!inputId || !inputYm) {
+        for (var k in item) {
+          var valStr = String(item[k] || '').trim();
+          if (!inputYm && (/^202\d{3}$/.test(valStr) || /^202\d[-/](0[1-9]|1[0-2])$/.test(valStr))) {
+            inputYm = normalizeYm(valStr);
+          }
+          if (!inputId && /^\d{1,5}$/.test(valStr) && !/^202\d{3}$/.test(valStr) && /編號|代號|代碼|專櫃|ID/i.test(k)) {
+            inputId = normalizeId(valStr);
+          }
+        }
       }
 
       if (!inputId || !inputYm) continue;
@@ -948,14 +974,12 @@ function upsertMonthlyData(adminToken, rows) {
         }
 
         if (hasDiff) {
-          // 有實質差異才執行覆蓋更新，並整列一次寫入以大幅提高執行速度
           sheet.getRange(targetRowIdx, 1, 1, headers.length).setValues([updatedRowValues]);
           if (existingDataRow) {
             sheetData[existingInfo.dataRowIndex] = updatedRowValues;
           }
           updatedCount++;
         } else {
-          // 數值完全一致：識別為重複資料，略過不寫入
           skippedCount++;
         }
       } else {
@@ -968,24 +992,26 @@ function upsertMonthlyData(adminToken, rows) {
         }
         newRowsToAppend.push(newRowArr);
         insertedCount++;
-        // 更新記憶體中的 keyMap 避免同批次重複新增同一鍵值
         keyMap[compositeKey] = {
-          rowNum: sheetData.length + newRowsToAppend.length,
+          rowNum: trueLastRow + newRowsToAppend.length,
           dataRowIndex: -1
         };
       }
     }
 
-    // 批次附加新列
+    // 批次附加新列 (精準自 trueLastRow + 1 開始寫入，徹底解決刪除留白問題)
     if (newRowsToAppend.length > 0) {
-      sheet.getRange(sheet.getLastRow() + 1, 1, newRowsToAppend.length, headers.length).setValues(newRowsToAppend);
+      sheet.getRange(trueLastRow + 1, 1, newRowsToAppend.length, headers.length).setValues(newRowsToAppend);
     }
 
     var resultMsg = '';
-    if (insertedCount === 0 && updatedCount === 0 && skippedCount > 0) {
+    if (insertedCount === 0 && updatedCount === 0 && skippedCount === 0) {
+      resultMsg = '上傳失敗：未能在輸入的 ' + rows.length + ' 筆資料中辨識出專櫃編號與結帳年月。';
+      return { success: false, message: resultMsg };
+    } else if (insertedCount === 0 && updatedCount === 0 && skippedCount > 0) {
       resultMsg = '上傳資料皆已存在且內容完全一致！共自動識別並略過 ' + skippedCount + ' 筆重複資料，未進行重複寫入。';
     } else {
-      resultMsg = '月結資料處理完成！新增 ' + insertedCount + ' 筆，覆蓋更新 ' + updatedCount + ' 筆，略過重複且無異動 ' + skippedCount + ' 筆。';
+      resultMsg = '月結資料寫入成功！新增 ' + insertedCount + ' 筆（寫入第 ' + (trueLastRow + 1) + ' 至 ' + (trueLastRow + insertedCount) + ' 列），覆蓋更新 ' + updatedCount + ' 筆，略過重複無異動 ' + skippedCount + ' 筆。';
     }
 
     return {

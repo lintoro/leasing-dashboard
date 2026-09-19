@@ -1121,16 +1121,16 @@
 
       if (!confirm(`確定將這 ${parsedExcelData.length} 筆月結資料依欄位對照寫入 Google Sheets？\n\n系統將自動比對「專櫃編號+銷售年月」：\n1. 資料已存在且內容一致：自動識別重複並略過（不重複寫入）\n2. 資料已存在但內容不同：覆蓋更新該筆\n3. 全新專櫃年月：新增寫入`)) return;
 
-      // 依據使用者確認的欄位對應關係，轉換為系統標準結構
+      // 依據使用者確認的欄位對應關係，轉換為系統標準結構，並同時保留原始欄位作為多重備援
       const standardizedData = parsedExcelData.map(rawRow => {
-        const standardItem = {};
+        const item = Object.assign({}, rawRow);
         TARGET_COLUMNS.forEach(tc => {
           const excelHeader = currentColumnMapping[tc.key];
           if (excelHeader && rawRow[excelHeader] !== undefined && rawRow[excelHeader] !== null) {
-            standardItem[tc.key] = rawRow[excelHeader];
+            item[tc.key] = rawRow[excelHeader];
           }
         });
-        return standardItem;
+        return item;
       });
 
       const token = localStorage.getItem('LEASING_AUTH_TOKEN');
