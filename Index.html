@@ -338,8 +338,8 @@
             <button onclick="window.toggleModuleView('top-sales', 'table')" class="view-toggle-btn bg-[#4d7cfe] text-white flex items-center gap-1">表格</button>
           </div>
         </div>
-        <div id="top-sales-view-chart" class="hidden relative w-full h-[312px]"><canvas id="topSalesChart"></canvas></div>
-        <div id="top-sales-view-table" class="overflow-y-auto max-h-[312px]">
+        <div id="top-sales-view-chart" class="hidden relative w-full h-[365px]"><canvas id="topSalesChart"></canvas></div>
+        <div id="top-sales-view-table" class="overflow-y-auto max-h-[365px]">
           <table class="w-full text-left text-xs whitespace-nowrap">
             <thead class="bg-[#161e46] text-[#CADCFC] sticky top-0 border-b border-[#36458d]">
               <tr><th class="py-1.5 px-2">排名</th><th class="py-1.5 px-2">名稱</th><th class="py-1.5 px-2 text-right">區間銷貨</th><th class="py-1.5 px-2 text-right">佔比</th><th class="py-1.5 px-2 text-right">YoY%</th></tr>
@@ -362,8 +362,8 @@
             <button onclick="window.toggleModuleView('top-rev', 'table')" class="view-toggle-btn bg-[#4d7cfe] text-white flex items-center gap-1">表格</button>
           </div>
         </div>
-        <div id="top-rev-view-chart" class="hidden relative w-full h-[312px]"><canvas id="topRevChart"></canvas></div>
-        <div id="top-rev-view-table" class="overflow-y-auto max-h-[312px]">
+        <div id="top-rev-view-chart" class="hidden relative w-full h-[365px]"><canvas id="topRevChart"></canvas></div>
+        <div id="top-rev-view-table" class="overflow-y-auto max-h-[365px]">
           <table class="w-full text-left text-xs whitespace-nowrap">
             <thead class="bg-[#161e46] text-[#CADCFC] sticky top-0 border-b border-[#36458d]">
               <tr><th class="py-1.5 px-2">排名</th><th class="py-1.5 px-2">名稱</th><th class="py-1.5 px-2 text-right">商場收益</th><th class="py-1.5 px-2 text-right">OCR%</th><th class="py-1.5 px-2 text-center">保底狀態</th></tr>
@@ -479,8 +479,7 @@
           <thead class="bg-[#161e46] text-[#CADCFC] font-bold border-b border-[#36458d] uppercase tracking-wider text-[11px]">
             <tr>
               <th class="py-2.5 px-3" id="th-col-id">專櫃編號</th>
-              <th class="py-2.5 px-3" id="th-col-name">名稱</th>
-              <th class="py-2.5 px-3" id="th-col-company">廠商</th>
+              <th class="py-2.5 px-3" id="th-col-name">專櫃名稱</th>
               <th class="py-2.5 px-3">樓層/品類</th>
               <th class="py-2.5 px-3 text-right">坪數</th>
               <th class="py-2.5 px-3 text-right">區間銷貨</th>
@@ -540,6 +539,18 @@
         <div class="p-3 rounded-xl bg-[#161e46] border border-[#36458d] flex items-center justify-between">
           <span class="font-bold text-[#CADCFC]">招商決策處置:</span>
           <span id="drawer-decision-tag" class="font-bold px-2.5 py-0.5 rounded-full text-xs">--</span>
+        </div>
+        <!-- YTD 銷貨與收益走勢圖 -->
+        <div class="bg-[#161e46] p-3 rounded-xl border border-[#36458d] space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold text-[#CADCFC]">YTD 銷貨與收益走勢</span>
+            <div class="flex items-center gap-1">
+              <button id="drawer-chart-btn-sales" onclick="window.switchDrawerChart('sales')" class="text-[10px] px-2 py-0.5 rounded bg-[#4d7cfe] text-white font-bold transition">銷貨淨額</button>
+              <button id="drawer-chart-btn-rev" onclick="window.switchDrawerChart('rev')" class="text-[10px] px-2 py-0.5 rounded text-[#CADCFC] hover:bg-[#36458d] transition">商場收益</button>
+            </div>
+          </div>
+          <div class="relative w-full" style="height:160px"><canvas id="drawer-ytd-chart"></canvas></div>
+          <div id="drawer-ytd-summary" class="text-[10px] text-slate-300 text-center leading-relaxed"></div>
         </div>
         <div id="drawer-vendor-stores-section" class="hidden">
           <h4 class="text-xs font-bold text-[#CADCFC] uppercase mb-2">所屬專櫃清單</h4>
@@ -890,34 +901,45 @@
         const shortage = items.reduce((s, it) => s + it.shortageCount, 0);
         const minDays = Math.min(...items.map(it => it.daysToExpiry));
 
-        let tag = { text: "集團觀察", color: "bg-slate-500/20 text-slate-300 border-slate-500/30" };
-        let strategy = `旗下共納管 ${items.length} 個專櫃，整體營運平穩。`;
+        // ======= 廠商視角 5 級實戰決策判定 =======
+        // 計算旗下專櫃最高銷貨（用於 Top 20% 判斷的基準參考）
+        const allStoreSales = Object.values(vGroups).map(g => g.reduce((s, it) => s + it.currentRecord.salesNet, 0));
+        const allSalesSorted = allStoreSales.slice().sort((a, b) => b - a);
+        const top20Threshold = allSalesSorted[Math.max(0, Math.floor(allSalesSorted.length * 0.2) - 1)] || 0;
 
-        if (minDays < 0) {
-          // 旗下專櫃皆已到期退場
-          if (totalSales <= 0) {
-            tag = { text: "已撤/集團結案", color: "bg-indigo-950/70 text-indigo-300 border-indigo-500/50" };
-            strategy = `旗下 ${items.length} 個專櫃均已到期退場，且無實質出表銷貨，辦理結案手續。`;
-          } else if (shortage >= 2 || (hasPrior && yoy !== null && yoy <= -0.15)) {
-            tag = { text: "已撤/集團淘汰", color: "bg-rose-950/70 text-rose-300 border-rose-500/50" };
-            strategy = `旗下專櫃退場前多次觸發保底不足或大幅衰退，建議終止引進該集團旗下品牌。`;
-          } else if (shortage < 2 && ((hasPrior && yoy !== null && yoy >= 0.05) || ocr >= 0.08)) {
-            tag = { text: "已撤/集團重招", color: "bg-emerald-950/70 text-emerald-300 border-emerald-500/50" };
-            strategy = `旗下專櫃退場前營收貢獻良好，建議招商團隊評估洽談新合約或引進該集團其他優質新品牌。`;
-          } else {
-            tag = { text: "已撤/轉備選庫", color: "bg-slate-800/70 text-slate-300 border-slate-600/50" };
-            strategy = `旗下專櫃正常期滿退場，轉入儲備廠商庫存，列為改裝與檔期備選名冊。`;
-          }
-        } else {
-          // 仍有在櫃專櫃
-          if (totalSales <= 0) {
-            tag = { text: "新進駐/籌備中", color: "bg-blue-500/20 text-blue-300 border-blue-400/30" };
-          } else if (shortage >= 2) {
-            tag = { text: "集團協商/調整櫃位", color: "bg-rose-500/20 text-rose-300 border-rose-500/30" };
-          } else if (yoy !== null && yoy >= 0.08) {
-            tag = { text: "戰略夥伴/深化合作", color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" };
-          }
+        let tag = { text: "集團觀察", color: "bg-slate-500/20 text-slate-300 border-slate-500/30" };
+        let strategy = `旗下共 ${items.length} 個專櫃，整體平穩。`;
+
+        const storeCount = items.length;
+        const isAllExpired = items.every(it => it.daysToExpiry < 0);
+        const hasWeakStrong = storeCount >= 2 && items.some(it => it.ocr > 0.18) && items.some(it => it.ocr <= 0.18 && it.currentRecord.salesNet > 0);
+
+        if (isAllExpired) {
+          // 等級 5：屆期結案 — 旗下所有專櫃均已撤退
+          tag = { text: "🚪 屆期結案", color: "bg-indigo-950/70 text-indigo-300 border-indigo-500/50" };
+          strategy = `旗下 ${storeCount} 櫃均已到期退場。清算保證金、結清代扣款，完成檔案歸檔。`;
+        } else if (ocr > 0.18 || shortage >= 2) {
+          // 等級 4：承壓協商 — 平均 OCR 超標或多次包底不足
+          tag = { text: "⚠️ 承壓協商", color: "bg-rose-500/20 text-rose-300 border-rose-500/30" };
+          strategy = `毛利受壓，撤櫃風險高。稽核帳款扣繳，評估調降保底或立即啟動替補品牌備案。`;
+        } else if (hasWeakStrong) {
+          // 等級 3：結構優化 — 強弱櫃並存，OCR 落差大
+          tag = { text: "⚖️ 結構優化", color: "bg-amber-500/20 text-amber-300 border-amber-500/30" };
+          strategy = `強帶弱，汰弱留強。以強櫃續約為籌碼要求整改弱櫃體質、換產品線或協議縮坪移位。`;
+        } else if (minDays <= 90 && minDays >= 0) {
+          // 等級 2：主力換約 — 最快到期窗口已開
+          tag = { text: "🤝 主力換約", color: "bg-blue-500/20 text-blue-300 border-blue-400/30" };
+          strategy = `到期窗口已開，多櫃打包談。以集團總量為籌碼鎖定或微調抽成條件。`;
+        } else if (storeCount >= 2 && totalSales >= top20Threshold && ocr <= 0.18) {
+          // 等級 1：戰略核心 — 多櫃、Top 20%、OCR 健康
+          tag = { text: "🌟 戰略核心", color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" };
+          strategy = `業績支柱，優先鞏固。主動約訪高層保障旗艦位，洽談引進集團其他新品牌。`;
+        } else if (totalSales <= 0) {
+          tag = { text: "新進駐/籌備中", color: "bg-blue-500/20 text-blue-300 border-blue-400/30" };
+          strategy = `旗下 ${storeCount} 個專櫃尚無銷貨記錄，追蹤進場與開業進度。`;
         }
+        // 其餘維持「集團觀察」
+
 
         return {
           keyId: `VENDOR_${vName}`, isVendorGroup: true, storeCount: items.length, displayName: vName, companyName: vName,
@@ -1241,6 +1263,16 @@
       const active = rows.filter(r => r.daysToExpiry >= -90);
       document.getElementById("table-count").innerText = `${active.length} 筆`;
 
+      // 依當前視角切換總表表頭標題
+      const thIdCol = document.getElementById("th-col-id");
+      if (thIdCol) {
+        thIdCol.innerText = currentViewMode === 'STORE' ? "專櫃編號" : "專櫃數";
+      }
+      const thNameCol = document.getElementById("th-col-name");
+      if (thNameCol) {
+        thNameCol.innerText = currentViewMode === 'STORE' ? "專櫃名稱" : "廠商名稱";
+      }
+
       tbody.innerHTML = active.map(r => {
         const isSalesValid = r.currentRecord.salesNet > 0;
         let yoyDisplay = '';
@@ -1273,7 +1305,6 @@
         <tr class="table-row-hover transition text-xs ${r.daysToExpiry < 0 ? 'opacity-80' : ''}" onclick='window.openDrawerByKey("${encodeURIComponent(r.keyId)}")'>
           <td class="py-2 px-3 font-mono text-[#CADCFC]">${r.isVendorGroup?`${r.storeCount}櫃`:r.store.id}</td>
           <td class="py-2 px-3 font-bold text-white">${r.displayName}</td>
-          <td class="py-2 px-3 text-[11px] text-slate-300">${currentViewMode==='STORE'?r.companyName:'--'}</td>
           <td class="py-2 px-3 text-[11px] text-[#CADCFC]">${r.store.floor} · ${r.store.category}</td>
           <td class="py-2 px-3 text-right">${r.store.area.toFixed(1)} 坪</td>
           <td class="py-2 px-3 text-right font-bold text-white">${!isSalesValid?'--':fmtMoney(r.currentRecord.salesNet)}</td>
@@ -1333,10 +1364,198 @@
       document.getElementById("drawer-shortage-amount").innerText = fmtMoney(currentRecord.minShortage);
       document.getElementById("drawer-total-revenue").innerText = fmtMoney(realMallRevenue);
       document.getElementById("drawer-strategy-text").innerText = strategy;
+      // 渲染 YTD 走勢圖
+      window.renderDrawerYTDChart(row, 'sales');
       modal.classList.remove("hidden");
     };
 
     window.closeDrawer = function() { document.getElementById("tenant-modal").classList.add("hidden"); };
+
+    // ====== YTD 走勢圖：全域狀態 ======
+    let _drawerChartInstance = null;  // Chart.js 實例，避免重複建立
+    let _drawerChartRow = null;       // 目前開啟的 row 資料，供切換維度時使用
+
+    /**
+     * 渲染 360 抽屜的 YTD 走勢圖
+     * @param {Object} row - computeDynamicData 產生的行資料
+     * @param {string} mode - 'sales'（銷貨淨額）或 'rev'（商場收益）
+     */
+    window.renderDrawerYTDChart = function(row, mode) {
+      _drawerChartRow = row;
+      mode = mode || 'sales';
+
+      // 判斷 YTD 基準年（以 selectedEndPeriod 的年份為主）
+      const endYm = String(selectedEndPeriod || '').replace(/\D/g, '');
+      const ytdYear = endYm.length >= 4 ? parseInt(endYm.substring(0, 4)) : new Date().getFullYear();
+      const lastYtdYear = ytdYear - 1;
+
+      // 取得 YTD 月份清單（當年 01 月 ~ 選定結束月）
+      const endMonth = endYm.length >= 6 ? parseInt(endYm.substring(4, 6)) : 12;
+      const ytdMonths = [];
+      for (let m = 1; m <= endMonth; m++) {
+        ytdMonths.push(`${ytdYear}${String(m).padStart(2, '0')}`);
+      }
+
+      // 取得原始月結資料列（依視角聚合）
+      const rawRows = activeMonthlyRaw || [];
+      function sumByMonth(ym) {
+        const ymStr = String(ym).replace(/\D/g, '').substring(0, 6);
+        let ids = [];
+        if (row.isVendorGroup) {
+          ids = row.underlyingStores.map(s => String(s.store.id));
+        } else {
+          ids = [String(row.store.id)];
+        }
+        return rawRows.filter(r => {
+          const rid = String(r.id || '');
+          const rym = String(r.period || '').replace(/\D/g, '').substring(0, 6);
+          return ids.includes(rid) && rym === ymStr;
+        }).reduce((acc, r) => {
+          // salesNet = 未稅 + 稅額（activeMonthlyRaw.salesNet 對應未稅，salesTax 對應稅額）
+          acc.sales += ((r.salesNet || 0) + (r.salesTax || 0));
+          // rev = 抽成額合計 + 保底不足
+          acc.rev += ((r.commTotal || 0) + (r.minShortage || 0));
+          return acc;
+        }, { sales: 0, rev: 0 });
+      }
+
+      // 已撤櫃：截斷至撤櫃月份
+      let cutoffYm = null;
+      if (!row.isVendorGroup && row.daysToExpiry < 0) {
+        const endStr = String(row.store.end || '').replace(/\D/g, '').substring(0, 6);
+        if (endStr.length === 6) cutoffYm = endStr;
+      } else if (row.isVendorGroup) {
+        // 廠商：取最晚仍有數據的月份（若全撤，取旗下最晚 end）
+        const expiredAll = row.underlyingStores.every(s => s.daysToExpiry < 0);
+        if (expiredAll) {
+          const latestEnd = row.underlyingStores.map(s => String(s.store.end || '').replace(/\D/g, '').substring(0, 6)).sort().pop();
+          cutoffYm = latestEnd || null;
+        }
+      }
+
+      // 組裝各月份數字
+      const labelsThis = [];
+      const dataThisSales = [], dataThisRev = [];
+      const dataLastSales = [], dataLastRev = [];
+      let ytdSumThis = { sales: 0, rev: 0 };
+      let ytdSumLast = { sales: 0, rev: 0 };
+
+      ytdMonths.forEach(ym => {
+        if (cutoffYm && ym > cutoffYm) return; // 截斷
+        const thisData = sumByMonth(ym);
+        const lastYm = `${lastYtdYear}${ym.substring(4)}`;
+        const lastData = sumByMonth(lastYm);
+        labelsThis.push(`${ym.substring(4)}月`);
+        dataThisSales.push(thisData.sales);
+        dataThisRev.push(thisData.rev);
+        dataLastSales.push(lastData.sales);
+        dataLastRev.push(lastData.rev);
+        ytdSumThis.sales += thisData.sales;
+        ytdSumThis.rev += thisData.rev;
+        ytdSumLast.sales += lastData.sales;
+        ytdSumLast.rev += lastData.rev;
+      });
+
+      // 選擇數據維度
+      const isSales = mode === 'sales';
+      const thisData = isSales ? dataThisSales : dataThisRev;
+      const lastData = isSales ? dataLastSales : dataLastRev;
+      const thisSum = isSales ? ytdSumThis.sales : ytdSumThis.rev;
+      const lastSum = isSales ? ytdSumLast.sales : ytdSumLast.rev;
+      const label = isSales ? '銷貨淨額' : '商場收益';
+      const colorThis = isSales ? 'rgba(250, 204, 21, 0.9)' : 'rgba(52, 211, 153, 0.9)';
+      const colorLast = isSales ? 'rgba(251, 146, 60, 0.7)' : 'rgba(96, 165, 250, 0.7)';
+
+      // 銷毀舊圖表
+      if (_drawerChartInstance) {
+        _drawerChartInstance.destroy();
+        _drawerChartInstance = null;
+      }
+      const canvas = document.getElementById('drawer-ytd-chart');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      _drawerChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labelsThis,
+          datasets: [
+            {
+              label: `${ytdYear} ${label}`,
+              data: thisData,
+              borderColor: colorThis,
+              backgroundColor: colorThis.replace('0.9', '0.08'),
+              borderWidth: 2,
+              pointRadius: 3,
+              tension: 0.35,
+              fill: true
+            },
+            {
+              label: `${lastYtdYear} ${label}`,
+              data: lastData,
+              borderColor: colorLast,
+              backgroundColor: 'transparent',
+              borderWidth: 1.5,
+              borderDash: [4, 3],
+              pointRadius: 2,
+              tension: 0.35,
+              fill: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: true, position: 'top', labels: { color: '#CADCFC', font: { size: 9 }, boxWidth: 12, padding: 8 } },
+            tooltip: {
+              callbacks: {
+                label: function(ctx) {
+                  return ` ${ctx.dataset.label}: ${new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(ctx.parsed.y)}`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: { ticks: { color: '#8ba3d4', font: { size: 8 } }, grid: { color: 'rgba(54,69,141,0.4)' } },
+            y: {
+              ticks: {
+                color: '#8ba3d4',
+                font: { size: 8 },
+                callback: v => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : v
+              },
+              grid: { color: 'rgba(54,69,141,0.4)' }
+            }
+          }
+        }
+      });
+
+      // YTD 累計摘要
+      const fmt = v => new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(v);
+      const yoy = lastSum > 0 ? ((thisSum - lastSum) / lastSum * 100).toFixed(1) : null;
+      const yoyTxt = yoy !== null ? `（YoY ${yoy >= 0 ? '+' : ''}${yoy}%）` : '（無去年同期）';
+      const yoyColor = yoy === null ? 'color:#94a3b8' : (parseFloat(yoy) >= 0 ? 'color:#34d399' : 'color:#f87171');
+      document.getElementById('drawer-ytd-summary').innerHTML =
+        `今年 YTD：<strong style="color:#facc15">${fmt(thisSum)}</strong>　去年同期：<strong style="color:#fb923c">${fmt(lastSum)}</strong>　<span style="${yoyColor}">${yoyTxt}</span>`;
+
+      // 更新切換按鈕樣式
+      const btnSales = document.getElementById('drawer-chart-btn-sales');
+      const btnRev = document.getElementById('drawer-chart-btn-rev');
+      if (btnSales && btnRev) {
+        btnSales.className = `text-[10px] px-2 py-0.5 rounded font-bold transition ${isSales ? 'bg-[#4d7cfe] text-white' : 'text-[#CADCFC] hover:bg-[#36458d]'}`;
+        btnRev.className = `text-[10px] px-2 py-0.5 rounded font-bold transition ${!isSales ? 'bg-[#4d7cfe] text-white' : 'text-[#CADCFC] hover:bg-[#36458d]'}`;
+      }
+    };
+
+    /**
+     * 切換 360 抽屜 YTD 走勢圖的顯示維度（銷貨 or 收益）
+     * @param {string} mode - 'sales' 或 'rev'
+     */
+    window.switchDrawerChart = function(mode) {
+      if (_drawerChartRow) window.renderDrawerYTDChart(_drawerChartRow, mode);
+    };
+
+
     window.openSettingsModal = function() {
       const localCfg = (typeof window.__LOCAL_CONFIG__ !== 'undefined' && window.__LOCAL_CONFIG__) ? window.__LOCAL_CONFIG__ : {};
       const currentId = localStorage.getItem("g_sheet_id") || localCfg.SPREADSHEET_ID || "";

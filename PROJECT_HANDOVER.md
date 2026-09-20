@@ -150,23 +150,47 @@ C:\Github\ReactApp\leasing-dashboard\
    - 切換至正式模式，所有指標與圖表立即更新為全量大數據。
 4. 若需切換其他試算表測試，可點擊右上角「齒輪」設定視窗，直接在介面覆寫輸入並儲存。
 
-### B. 部署至 Google 雲端外網 (GAS)
+   - 切換至正式模式，所有指標與圖表立即更新為全量大數據。
+4. 若需切換其他試算表測試，可點擊右上角「齒輪」設定視窗，直接在介面覆寫輸入並儲存。
+
+### B. 部署至 Google 雲端外網 (GAS Clasp)
 當準備發布給主管使用時，本機已預先配置完成 Google Clasp 工具：
 ```powershell
 # 1. 確保工作目錄正確
 cd C:\Github\ReactApp\leasing-dashboard
 
 # 2. 推送程式碼至 Google Apps Script 雲端專案
-npx @google/clasp push
+npx @google/clasp push --force
 
-# 3. 在 GAS 網頁編輯器中，手動執行一次 Code.gs 的 setupInitialProperties：
-#    setupInitialProperties("YOUR_SPREADSHEET_ID", "您的授權金鑰")
-#    完成後試算表 ID 永久安全儲存於雲端腳本屬性，外網無任何外洩風險。
+# 3. 發布版本覆蓋至正式 deploymentId（確保正式 URL 指向最新代碼）
+npx @google/clasp deploy --deploymentId YOUR_DEPLOYMENT_ID --description "v25 廠商專櫃數欄位+5級決策方針+360抽屜YTD走勢圖"
 ```
 
 ---
 
-## 5. 重要注意事項 (Gotchas & Best Practices)
+## 5. 近期版本推移與演進重點紀錄 (Version Changelog & Handover Notes)
+
+### 📌 版本 v24 ~ v25 (2026-09-21) — 雙視角徹底對齊與 360 度 YTD 趨勢圖
+1. **表頭動態切換**：
+   - 第一欄：專櫃視角顯示「`專櫃編號`」；廠商視角切換顯示「`專櫃數`」。
+   - 第二欄：專櫃視角顯示「`專櫃名稱`」；廠商視角切換顯示「`廠商名稱`」。
+   - 移除廠商視角下重複之無效「廠商」欄位。
+2. **廠商視角 360 度抽屜 5 級實戰決策引擎**：
+   - 🌟 **戰略核心**：設櫃數 $\ge 2$、Top 20% 營收、$OCR \le 18\%$ $\rightarrow$ 優先鞏固、約訪高層談旗艦位與新品牌。
+   - 🤝 **主力換約**：營運正常達標、最近到期 $\le 90$ 天 $\rightarrow$ 多櫃打包談，以集團總量鎖定條款。
+   - ⚖️ **結構優化**：設櫃數 $\ge 2$ 且強弱櫃併存（OCR 落差大） $\rightarrow$ 強帶弱、汰弱留強，要求整改弱櫃或縮坪移位。
+   - ⚠️ **承壓協商**：平均 $OCR > 18\%$ 或多次包底不足 $\rightarrow$ 評估降保底或啟動替補品牌備案。
+   - 🚪 **屆期結案**：旗下所有專櫃到期日均 $<0$（全數退場） $\rightarrow$ 結算保證金與代扣款並歸檔。
+3. **360 度抽屜頂部 YTD 折線圖**：
+   - 新增可切換 `[ 銷貨淨額 ]` 與 `[ 商場收益 ]` 的 YTD 趨勢圖。
+   - 今年與去年同期雙折線（實線 vs 虛線）對比，已撤櫃專櫃/集團自動截斷至撤櫃月份。
+   - 動態計算年分（預設今年 vs 去年，如 2026 vs 2025；2027 年時自動切換為 2027 vs 2026）。
+4. **系統說明文件手冊產出**：
+   - 新增 `OPERATION_MANUAL.md`，為管理者與使用者撰寫完整的 繁體中文（台灣） 系統設定與操作說明。
+
+---
+
+## 6. 重要注意事項 (Gotchas & Best Practices)
 
 1. **資安鐵律（零硬編碼）**：
    * 絕不可在 `Index.html` 或 `Code.gs` 中寫入試算表 ID、GAS Script ID 或 API Secret。
@@ -182,13 +206,14 @@ npx @google/clasp push
    * 地端透過 GViz JSONP 讀取時，試算表的共用權限需設為**「知道連結的使用者（檢視者）」**。
    * 雲端透過 GAS 後端代理讀取時，只要 GAS 專案持有者的 Google 帳號有權限即可，試算表無須對外公開。
 
-4. **主管身分免暗門自動授權（Phase 2 預定）**：
-   * 目前遵照使用者指示，維持「點擊 6 次暗門進入正式模式」之試作展示操作。
-   * 日後若主管正式上線，可於 `Code.gs` 中利用 `Session.getActiveUser().getEmail()` 取得主管信箱，在載入頁面時自動授權並同步資料，免去手動點擊暗門流程。
+4. **版本更新與正式部署發布**：
+   * 單純 `npx @google/clasp push` 只會更新 `@HEAD`，不會影響正式網址。
+   * 發布給使用者測試時，必須執行 `npx @google/clasp deploy --deploymentId YOUR_DEPLOYMENT_ID` 指向定點部署 ID。
 
 ---
 
 ### 專案狀態確認
-* 本專案全量程式碼已通過語法檢驗與真實數據模擬測試。
-* Git 倉庫狀態目前為 `nothing to commit, working tree clean`。
-* 後續交接人員可直接依照本手冊執行維護、擴充或部署。
+* 本專案全量程式碼已通過語法檢驗、真實數據模擬與 Clasp 正式部署測試。
+* Git 倉庫與正式環境部署已對齊（`Version 25`）。
+* 所有變更、手冊與交接注意事項已同步更新於專案根目錄之 [`PROJECT_HANDOVER.md`](file:///c:/Github/ReactApp/leasing-dashboard/PROJECT_HANDOVER.md) 與 [`OPERATION_MANUAL.md`](file:///c:/Github/ReactApp/leasing-dashboard/OPERATION_MANUAL.md)。
+
