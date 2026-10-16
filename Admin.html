@@ -425,7 +425,7 @@
 
       <div>
         <label class="block font-bold text-[#CADCFC] mb-1">專櫃編號 (5碼格式)</label>
-        <input type="text" id="field-id" required placeholder="例：00008"
+        <input type="text" id="field-id" required placeholder="例：A0001"
                class="w-full bg-[#161e46] text-white text-xs font-mono font-bold rounded-xl px-3 py-2 border border-[#36458d] focus:border-[#4d7cfe] focus:outline-none">
       </div>
 
@@ -1269,7 +1269,7 @@
       } else {
         // 地端測試模擬
         masterDataCache = [
-          { '專櫃編號': '00008', '專櫃名稱': '示範品牌專櫃A', '廠商名稱': '示範服飾有限公司', '樓層': '1F', '品類大類': '流行服飾', '租賃坪數': 120.5, '合約起始日': '2024-01-01', '合約到期日': '2026-12-31', '約定抽成別': '一般抽成', '約定抽成率': 0.12, '月約定保底金額': 250000 }
+          { '專櫃編號': 'A0001', '專櫃名稱': '示範品牌專櫃A', '廠商名稱': '示範服飾有限公司', '樓層': '1F', '品類大類': '流行服飾', '租賃坪數': 30.0, '合約起始日': '2024-01-01', '合約到期日': '2026-12-31', '約定抽成別': '一般抽成', '約定抽成率': 0.15, '月約定保底金額': 100000 }
         ];
         renderMasterTable(masterDataCache);
       }

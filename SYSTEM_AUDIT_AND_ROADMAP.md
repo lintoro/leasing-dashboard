@@ -39,7 +39,7 @@
 erDiagram
     Store_Contract_Master ||--o{ Monthly_Settlement_Raw : "一對多關聯 (以專櫃代號 5碼 Join)"
     Store_Contract_Master {
-        string 專櫃編號 PK "正規化5碼 (如 00008)"
+        string 專櫃編號 PK "正規化5碼 (如 A0001)"
         string 專櫃名稱 "品牌櫃位名稱"
         string 廠商名稱 "所屬代理商/總公司"
         string 樓層 "所在樓面 (如 1F, 2F, B1)"
@@ -66,7 +66,7 @@ erDiagram
 
 ### 2.1 主檔欄位容錯與去重原則
 * **欄位別名相容**：透過 `getFieldValue(row, possibleKeys)` 支援「專櫃名稱 / 專櫃 / 品牌名稱 / Name」等多種表單別名。
-* **編號標準化 (`normalizeId`)**：無論來源是字串或純數字，一律格式化為 5 碼（如 `8` $\rightarrow$ `00008`），防止前置 0 丟失造成關聯斷裂。
+* **編號標準化 (`normalizeId`)**：無論來源是字串或純數字，一律格式化為 5 碼（如 `8` $\rightarrow$ `A0001`），防止前置 0 丟失造成關聯斷裂。
 * **多合約去重**：當同一專櫃因歷年續約出現多筆紀錄時，系統以「合約結束日較晚者」為最新有效合約，確保到期日不回溯。
 
 ---

@@ -55,7 +55,7 @@
 - **陷阱**：Google Sheets 會自動將 `202501` 或 `2025-01` 辨識轉為 Date 物件。
 - **防錯規範**：
   - 後端 `Code.gs` 與前端解析必須有統一的 `normalizeYm(val)`，去除連字號與斜線，標準化為 `YYYYMM` 格式進行比對。
-  - 專櫃 ID 必須透過 `normalizeId()` 保留前置零（如 `00008`），避免數字轉換造成 Join 鍵值失效。
+  - 專櫃 ID 必須透過 `normalizeId()` 保留前置零（如 `A0001`），避免數字轉換造成 Join 鍵值失效。
 
 ### 6. Google Apps Script Web App 與主管身分認證 (Manager Authorization)
 - **後端存取安全**：
