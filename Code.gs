@@ -96,7 +96,7 @@ function doPost(e) {
     }
 
     if (action === 'getSyncData') {
-      var data = apiGetSyncData();
+      var data = fetchSyncDataInternal_();
       return ContentService.createTextOutput(JSON.stringify(data))
         .setMimeType(ContentService.MimeType.JSON);
     }
@@ -1213,7 +1213,7 @@ function getMasterData(token) {
   try {
     var masterTab = getAppProperty('MASTER_TAB') || 'Store_Contract_Master';
     var sheetId = getAppProperty('SPREADSHEET_ID');
-    var result = getSheetDataAsJson(sheetId, masterTab);
+    var result = getSheetDataAsJson_(sheetId, masterTab);
     return result;
   } catch (err) {
     return { success: false, message: err.message };
@@ -1309,9 +1309,27 @@ function insertMasterRecord(adminToken, fields) {
 // ==============================================================================
 
 /**
- * 取得雲端試算表真實資料 (由後端代理讀取，前端與網路封包中 0 外洩試算表 ID)
+ * 取得雲端試算表真實資料 (強制檢查使用者 Session Token，由後端代理讀取，試算表 ID 零外洩)
  */
-function apiGetSyncData() {
+function apiGetSyncData(token) {
+  var auth = validateToken(token);
+  if (!auth.valid) {
+    return {
+      success: false,
+      requireLogin: true,
+      error: auth.message || '尚未登入或連線已逾時，請重新登入'
+    };
+  }
+  var result = fetchSyncDataInternal_();
+  result.userName = auth.name;
+  result.userRole = auth.role;
+  return result;
+}
+
+/**
+ * 內部共用：實際讀取專櫃主檔與月結資料 (底線結尾函式不暴露給前端 google.script.run)
+ */
+function fetchSyncDataInternal_() {
   var userEmail = getCurrentUserEmail();
   var sheetId = getAppProperty('SPREADSHEET_ID');
   
@@ -1322,8 +1340,8 @@ function apiGetSyncData() {
   var masterTab = getAppProperty('MASTER_TAB') || 'Store_Contract_Master';
   var rawTab = getAppProperty('RAW_TAB') || 'Monthly_Settlement_Raw';
 
-  var masterResult = getSheetDataAsJson(sheetId, masterTab);
-  var rawResult = getSheetDataAsJson(sheetId, rawTab);
+  var masterResult = getSheetDataAsJson_(sheetId, masterTab);
+  var rawResult = getSheetDataAsJson_(sheetId, rawTab);
 
   if (!masterResult.success) throw new Error('專櫃主檔讀取失敗: ' + masterResult.error);
   if (!rawResult.success) throw new Error('月結資料讀取失敗: ' + rawResult.error);
@@ -1337,9 +1355,9 @@ function apiGetSyncData() {
 }
 
 /**
- * 讀取試算表並轉換為 JSON 陣列
+ * 內部共用：讀取試算表並轉換為 JSON 陣列 (底線結尾函式不暴露給前端 google.script.run)
  */
-function getSheetDataAsJson(spreadsheetId, tabName) {
+function getSheetDataAsJson_(spreadsheetId, tabName) {
   try {
     var ss = spreadsheetId ? SpreadsheetApp.openById(spreadsheetId) : SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(tabName);

@@ -554,9 +554,29 @@
     // 初始化驗證
     window.addEventListener('DOMContentLoaded', () => {
       checkAdminAuth();
-      loadPendingUsers();
-      loadAllUsers();
     });
+
+    function showAdminAuthLock(msg) {
+      let overlay = document.getElementById('admin-auth-lock');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'admin-auth-lock';
+        overlay.className = 'fixed inset-0 bg-[#1a224a] z-[100] flex flex-col items-center justify-center space-y-4 p-6 text-center';
+        overlay.innerHTML = `
+          <div class="w-16 h-16 rounded-2xl bg-[#1E2761] border border-rose-500/40 flex items-center justify-center text-rose-400 shadow-2xl">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          </div>
+          <h2 class="text-lg font-bold text-white">需要管理員權限</h2>
+          <p id="admin-auth-lock-msg" class="text-xs text-amber-300 max-w-sm"></p>
+          <button type="button" onclick="navigateTo('login')" class="px-5 py-2.5 bg-[#4d7cfe] hover:bg-blue-600 text-white text-xs font-bold rounded-xl shadow-lg transition">
+            前往登入頁面
+          </button>
+        `;
+        document.body.appendChild(overlay);
+      }
+      const msgEl = document.getElementById('admin-auth-lock-msg');
+      if (msgEl) msgEl.innerText = msg || '尚未登入或無管理員權限，請先登入後再操作。';
+    }
 
     function checkAdminAuth() {
       const token = localStorage.getItem('LEASING_AUTH_TOKEN');
@@ -564,22 +584,51 @@
       const name = localStorage.getItem('LEASING_USER_NAME');
       const empId = localStorage.getItem('LEASING_USER_EMPID');
 
-      if (!token || role !== 'admin') {
-        showGlobalAlert('未具備管理員權限或尚未登入，即將轉回登入頁...', 'error');
-        setTimeout(() => navigateTo('login'), 1500);
-        return;
+      if (window.google && google.script && google.script.run) {
+        if (!token || role !== 'admin') {
+          showAdminAuthLock('未具備管理員權限或尚未登入，請前往登入頁面。');
+          setTimeout(() => navigateTo('login'), 1200);
+          return;
+        }
+        google.script.run
+          .withSuccessHandler(function(authRes) {
+            if (!authRes || !authRes.valid || authRes.role !== 'admin') {
+              localStorage.clear();
+              showAdminAuthLock((authRes && authRes.message) || '管理員憑證已失效或權限不足，請重新登入。');
+              setTimeout(() => navigateTo('login'), 1200);
+              return;
+            }
+            document.getElementById('current-admin-name').innerText = (authRes.name || authRes.empId) + ' (' + authRes.empId + ')';
+            loadPendingUsers();
+            loadAllUsers();
+          })
+          .withFailureHandler(function(err) {
+            showAdminAuthLock('權限驗證失敗：' + (err.message || err));
+          })
+          .validateToken(token);
+      } else {
+        if (!token || role !== 'admin') {
+          showGlobalAlert('未具備管理員權限或尚未登入，即將轉回登入頁...', 'error');
+          setTimeout(() => navigateTo('login'), 1500);
+          return;
+        }
+        document.getElementById('current-admin-name').innerText = (name || empId) + ' (' + empId + ')';
+        loadPendingUsers();
+        loadAllUsers();
       }
-
-      document.getElementById('current-admin-name').innerText = (name || empId) + ' (' + empId + ')';
     }
 
     function navigateTo(page) {
       if (window.google && google.script && google.script.run) {
         google.script.run.withSuccessHandler(function(url) {
           const targetUrl = url + '?page=' + page;
-          if (window.top) {
-            window.top.location.href = targetUrl;
-          } else {
+          try {
+            if (window.top && window.top !== window) {
+              window.top.location.href = targetUrl;
+            } else {
+              window.location.href = targetUrl;
+            }
+          } catch (e) {
             window.location.href = targetUrl;
           }
         }).getScriptUrl();

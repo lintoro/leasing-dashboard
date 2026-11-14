@@ -44,3 +44,17 @@
 * **問題現象**：區間 Top 10 與實收 Top 10 表格在容器高 312px 時，第 10 筆資料會被遮擋，需要手動滑動。
 * **修復方案**：
   - 將 `top-sales-view-table` 與 `top-rev-view-table` 的容器高度調整為 `365px`，使 10 筆資料完美展現。
+
+---
+
+### Issue #005：直連戰情室網址 (`?page=dashboard`) 跳過登入驗證並直接顯示資料
+* **發生日期**：2026-11-13
+* **問題現象**：未登入且無 `viewer` 帳號時，在瀏覽器直連 `?page=dashboard` 仍直接顯示「訪客 VIEWER」與完整營運數據。
+* **根因分析**：
+  1. **後端 API 無 Token 驗證**：`Code.gs` 之 `apiGetSyncData()` 未驗證 Session Token，且 `getSheetDataAsJson()` 未以底線結尾私有化而暴露給前端。
+  2. **前端時序漏洞**：`Index.html` `window.onload` 同時平行呼叫 `checkDashboardAuth()` 與 `triggerRealSync()`，未等待驗證通過即拉取資料；HTML 預設寫死「訪客 / VIEWER」。
+  3. **GAS 沙盒阻擋自動跳轉**：非使用者手勢觸發的 `window.top.location.href` 在 GAS iframe 內被瀏覽器安全機制擋掉，導致未能導回登入頁。
+* **修復方案**：
+  - **後端封堵 (`Code.gs`)**：`apiGetSyncData(token)` 強制執行 `validateToken(token)`；新增私有函式 `fetchSyncDataInternal_()` 供 `doPost`（通過 `APP_SHARED_SECRET` 後）與 `apiGetSyncData` 共用，並將 `getSheetDataAsJson` 改為私有函式 `getSheetDataAsJson_()`。
+  - **前端閘門 (`Index.html`、`Admin.html`)**：移除預設「訪客 VIEWER」字樣；必須先通過 `validateToken(token)` 驗證成功後才呼叫 `triggerRealSync(token)` 或載入後台資料；未登入時維持全螢幕鎖定遮罩並提供手動「前往登入頁面」按鈕。
+  - **跳轉容錯 (`Index.html`、`Admin.html`、`Login.html`、`ChangePwd.html`)**：`navigateTo()` 加上 `try/catch` 降級至 `window.location.href`。

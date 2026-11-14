@@ -126,22 +126,28 @@
 </head>
 <body class="min-h-screen flex flex-col antialiased selection:bg-blue-500 selection:text-white pb-12">
 
-  <!-- 全螢幕待機連線畫面 (Loading Overlay) -->
+  <!-- 全螢幕待機連線畫面 (Loading Overlay / Auth Gate) -->
   <div id="app-loading-screen" class="fixed inset-0 bg-[#1a224a] z-50 flex flex-col items-center justify-center space-y-4 transition-opacity duration-300">
-    <div class="w-16 h-16 rounded-2xl bg-[#1E2761] border border-[#36458d] flex items-center justify-center text-[#CADCFC] shadow-2xl">
+    <div id="loading-spinner-box" class="w-16 h-16 rounded-2xl bg-[#1E2761] border border-[#36458d] flex items-center justify-center text-[#CADCFC] shadow-2xl">
       <svg class="animate-spin w-8 h-8 text-[#4d7cfe]" fill="none" viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
       </svg>
     </div>
-    <div class="text-center space-y-1">
-      <h2 class="text-base font-bold text-white tracking-wide" id="loading-title">正在安全連線雲端資料庫...</h2>
-      <p class="text-xs text-[#CADCFC]/80 font-medium" id="loading-desc">即時載入專櫃合約主檔與月結營運數據，請稍候</p>
+    <div class="text-center space-y-1 px-4">
+      <h2 class="text-base font-bold text-white tracking-wide" id="loading-title">正在驗證登入身分...</h2>
+      <p class="text-xs text-[#CADCFC]/80 font-medium" id="loading-desc">系統正在確認您的存取權限，請稍候</p>
     </div>
     <div id="loading-error-box" class="hidden flex flex-col items-center space-y-2 pt-2">
       <p class="text-xs text-rose-400 font-semibold" id="loading-error-msg"></p>
       <button type="button" onclick="triggerRealSync()" class="px-4 py-1.5 bg-[#4d7cfe] hover:bg-blue-600 text-white text-xs font-bold rounded-xl shadow">
         重新嘗試連線
+      </button>
+    </div>
+    <div id="loading-auth-box" class="hidden flex flex-col items-center space-y-3 pt-2">
+      <p class="text-xs text-amber-300 font-semibold" id="loading-auth-msg">請先登入系統後再檢視戰情室數據</p>
+      <button type="button" onclick="navigateTo('login')" class="px-5 py-2 bg-[#4d7cfe] hover:bg-blue-600 text-white text-xs font-bold rounded-xl shadow-lg transition">
+        前往登入頁面
       </button>
     </div>
   </div>
@@ -167,8 +173,8 @@
         <!-- 登入身分標籤 -->
         <div id="user-profile-badge" class="flex items-center gap-1.5 bg-[#161e46] px-2.5 py-1 rounded-lg border border-[#36458d] text-xs">
           <i data-lucide="user" class="w-3.5 h-3.5 text-cyan-300"></i>
-          <span id="user-display-name" class="font-bold text-white">訪客</span>
-          <span id="user-display-role" class="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-900/60 text-blue-200 border border-blue-400/30 font-semibold">VIEWER</span>
+          <span id="user-display-name" class="font-bold text-white">驗證中...</span>
+          <span id="user-display-role" class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 border border-slate-600/40 font-semibold">--</span>
         </div>
 
         <!-- Admin 專屬按鈕 -->
@@ -1650,6 +1656,10 @@
       if (desc) document.getElementById('loading-desc').innerText = desc;
       const errBox = document.getElementById('loading-error-box');
       if (errBox) errBox.classList.add('hidden');
+      const authBox = document.getElementById('loading-auth-box');
+      if (authBox) authBox.classList.add('hidden');
+      const spinner = document.getElementById('loading-spinner-box');
+      if (spinner) spinner.classList.remove('hidden');
     }
 
     function hideLoadingScreen() {
@@ -1665,6 +1675,8 @@
       el.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
       document.getElementById('loading-title').innerText = '資料庫連線中斷';
       document.getElementById('loading-desc').innerText = '無法自 Google 試算表讀取真實數據，請確認後端設定或點擊重新嘗試。';
+      const authBox = document.getElementById('loading-auth-box');
+      if (authBox) authBox.classList.add('hidden');
       const errBox = document.getElementById('loading-error-box');
       if (errBox) {
         document.getElementById('loading-error-msg').innerText = errMsg;
@@ -1672,14 +1684,43 @@
       }
     }
 
-    async function triggerRealSync() {
+    function showAuthRequired(msg) {
+      const el = document.getElementById('app-loading-screen');
+      if (!el) return;
+      el.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+      const spinner = document.getElementById('loading-spinner-box');
+      if (spinner) spinner.classList.add('hidden');
+      const errBox = document.getElementById('loading-error-box');
+      if (errBox) errBox.classList.add('hidden');
+      document.getElementById('loading-title').innerText = '需要登入系統';
+      document.getElementById('loading-desc').innerText = '為保護內部營運數據，戰情室僅供已授權同仁檢視。';
+      const authBox = document.getElementById('loading-auth-box');
+      if (authBox) {
+        document.getElementById('loading-auth-msg').innerText = msg || '尚未登入或連線已逾時，請點擊下方按鈕前往登入頁面';
+        authBox.classList.remove('hidden');
+      }
+    }
+
+    async function triggerRealSync(authToken) {
       showLoadingScreen("正在連線雲端資料庫...", "即時載入專櫃合約主檔與月結數據，請稍候");
 
       // 1. 若運行於 Google Apps Script Web App 環境，優先採用後端安全代理 (100% 試算表 ID 零外洩)
       if (typeof google !== 'undefined' && google.script && google.script.run) {
+        const tokenToUse = authToken || localStorage.getItem('LEASING_AUTH_TOKEN');
+        if (!tokenToUse) {
+          showAuthRequired('尚未登入系統，請先完成身分驗證');
+          navigateTo('login');
+          return;
+        }
         showToast("正透過 GAS 後端安全讀取試算表...", "info");
         google.script.run
           .withSuccessHandler(function(res) {
+            if (res && res.requireLogin) {
+              localStorage.clear();
+              showAuthRequired(res.error || '登入已過期，請重新登入');
+              navigateTo('login');
+              return;
+            }
             if (res && res.success && res.masterRows && res.rawRows) {
               populateDataFromRows(res.masterRows, res.rawRows);
               showToast(res.userEmail ? ("同步成功！主管: " + res.userEmail) : "試算表資料同步成功！");
@@ -1690,7 +1731,7 @@
           .withFailureHandler(function(err) {
             showLoadingError(err.message || String(err));
           })
-          .apiGetSyncData();
+          .apiGetSyncData(tokenToUse);
         return;
       }
 
@@ -1867,9 +1908,13 @@
       if (window.google && google.script && google.script.run) {
         google.script.run.withSuccessHandler(function(url) {
           const targetUrl = url + '?page=' + page;
-          if (window.top) {
-            window.top.location.href = targetUrl;
-          } else {
+          try {
+            if (window.top && window.top !== window) {
+              window.top.location.href = targetUrl;
+            } else {
+              window.location.href = targetUrl;
+            }
+          } catch (e) {
             window.location.href = targetUrl;
           }
         }).getScriptUrl();
@@ -1893,27 +1938,33 @@
       const token = localStorage.getItem('LEASING_AUTH_TOKEN');
       const role = localStorage.getItem('LEASING_USER_ROLE');
       const name = localStorage.getItem('LEASING_USER_NAME');
-      const empId = localStorage.getItem('LEASING_USER_EMPID');
 
       if (window.google && google.script && google.script.run) {
         if (!token) {
-          // 未登入，強制導向登入頁
+          // 未登入，鎖定畫面並嘗試導向登入頁
+          showAuthRequired('尚未登入系統，請點擊下方按鈕前往登入頁面');
           navigateTo('login');
           return;
         }
         google.script.run
           .withSuccessHandler(function(authRes) {
-            if (!authRes.valid) {
+            if (!authRes || !authRes.valid) {
               localStorage.clear();
+              showAuthRequired((authRes && authRes.message) || '登入憑證已失效，請重新登入');
               navigateTo('login');
             } else {
               renderUserInfo(authRes.name || authRes.empId, authRes.role);
+              triggerRealSync(token);
             }
+          })
+          .withFailureHandler(function(err) {
+            showAuthRequired('權限驗證失敗：' + (err.message || err));
           })
           .validateToken(token);
       } else {
-        // 地端純展示模式
-        renderUserInfo(name || '展示人員', role || 'viewer');
+        // 地端純展示測試模式 (僅限無 google.script 之本機開發環境)
+        renderUserInfo(name || '本機測試人員', role || 'viewer');
+        triggerRealSync();
       }
     }
 
@@ -1939,7 +1990,6 @@
     window.onload = function() {
       lucide.createIcons();
       checkDashboardAuth();
-      triggerRealSync();
     };
   </script>
 </body>
